@@ -48,6 +48,8 @@ from backend.app.services.image_service import (
 from backend.app.services.etsy_upload_service import listing_to_upload_dict
 from backend.app.services.queue_service import enqueue_upload_job
 from backend.app.services.shops import get_primary_shop
+from backend.app.services.usage_service import check_plan_limit, track_usage
+from backend.app.models.usage import UsageAction
 from backend.app.services.video_service import (
     VideoGenerationError,
     VideoUploadError,
@@ -116,6 +118,12 @@ def _require_video_generation_allowed(current_user: User) -> None:
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Video generation requires Pro plan."
         )
+
+
+def _require_usage_allowed(current_user: User, action: UsageAction, db: Session) -> None:
+    limit = check_plan_limit(current_user.id, action, db)
+    if not limit["allowed"]:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Plan limit reached for this action.")
 
 
 def _require_etsy_connection(shop: Shop) -> None:
@@ -361,6 +369,7 @@ async def generate_image(
     product_idea = _apply_product_overrides(_product_idea_from_analysis(shop, payload.product_idea_index), payload)
     listing = _owned_listing(db, shop, payload.listing_id) if payload.listing_id else None
     _require_image_generation_allowed(current_user, listing, payload.is_high_res)
+    _require_usage_allowed(current_user, UsageAction.IMAGE_GENERATED, db)
 
     if listing is None:
         listing = Listing(
@@ -394,6 +403,7 @@ async def generate_image(
     db.add(listing)
     db.commit()
     db.refresh(listing)
+    track_usage(current_user.id, UsageAction.IMAGE_GENERATED, db)
 
     return ImageGenerationResponse(
         listing_id=listing.id,
@@ -521,6 +531,7 @@ async def generate_video(
     db: Session = Depends(get_db)
 ) -> GenerateVideoResponse:
     _require_video_generation_allowed(current_user)
+    _require_usage_allowed(current_user, UsageAction.VIDEO_GENERATED, db)
     shop = _require_shop(current_user, db)
     listing = _owned_listing(db, shop, listing_id)
     image_urls = _video_image_urls(listing)
@@ -549,6 +560,7 @@ async def generate_video(
     listing.video_url = video_url
     db.add(listing)
     db.commit()
+    track_usage(current_user.id, UsageAction.VIDEO_GENERATED, db)
     return GenerateVideoResponse(video_url=video_url)
 
 
@@ -674,12 +686,14 @@ async def upload_listing(
 
     _require_etsy_connection(shop)
     _require_upload_ready(listing)
+    _require_usage_allowed(current_user, UsageAction.LISTING_UPLOADED, db)
     listing.status = ListingStatus.QUEUED
     listing.error_message = None
     db.add(listing)
     db.commit()
 
     job_id = await enqueue_upload_job(listing.id, current_user.id, shop.id)
+    track_usage(current_user.id, UsageAction.LISTING_UPLOADED, db)
     return ListingUploadResponse(job_id=job_id, message="Upload queued")
 
 
@@ -763,11 +777,13 @@ async def bulk_queue(
     for index, listing_id in enumerate(payload.listing_ids):
         listing = _owned_listing(db, shop, listing_id)
         _require_upload_ready(listing)
+        _require_usage_allowed(current_user, UsageAction.LISTING_UPLOADED, db)
         listing.status = ListingStatus.QUEUED
         listing.error_message = None
         db.add(listing)
         db.commit()
         await enqueue_upload_job(listing.id, current_user.id, shop.id, delay_seconds=index * 60)
+        track_usage(current_user.id, UsageAction.LISTING_UPLOADED, db)
         queued_count += 1
 
     return BulkQueueResponse(queued_count=queued_count)

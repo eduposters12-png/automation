@@ -1,7 +1,8 @@
 "use client";
 
-import { CheckCircle2, ExternalLink, KeyRound, Store } from "lucide-react";
-import { FormEvent, useState } from "react";
+import * as Sentry from "@sentry/nextjs";
+import { CheckCircle2, ExternalLink, KeyRound, Loader2, Store } from "lucide-react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
 
@@ -23,6 +24,66 @@ export function OnboardingSteps({
   const [claudeKey, setClaudeKey] = useState("");
   const [connecting, setConnecting] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [analyzing, setAnalyzing] = useState(false);
+  const [activeStep, setActiveStep] = useState(0);
+  const analysisPollRef = useRef<number | null>(null);
+
+  const analysisSteps = [
+    "Connecting to your Etsy shop...",
+    "Fetching your listings...",
+    "Finding trending opportunities...",
+    "Claude is analyzing your shop..."
+  ];
+
+  function clearAnalysisPoll() {
+    if (analysisPollRef.current) {
+      window.clearInterval(analysisPollRef.current);
+      analysisPollRef.current = null;
+    }
+  }
+
+  useEffect(() => {
+    return () => {
+      if (analysisPollRef.current) {
+        window.clearInterval(analysisPollRef.current);
+        analysisPollRef.current = null;
+      }
+    };
+  }, []);
+
+  async function startAnalysis() {
+    setAnalyzing(true);
+    setActiveStep(0);
+    try {
+      await apiFetch("/jobs/analyze-shop", { method: "POST", json: {} });
+      void apiFetch("/shop/analyze", { method: "POST" }).catch(() => undefined);
+      const started = Date.now();
+      clearAnalysisPoll();
+      analysisPollRef.current = window.setInterval(async () => {
+        setActiveStep((current) => Math.min(current + 1, analysisSteps.length - 1));
+        try {
+          const response = await apiFetch<{ analyzed: boolean }>("/shop/analysis");
+          if (response.analyzed) {
+            clearAnalysisPoll();
+            router.push("/dashboard?welcome=true");
+            router.refresh();
+          }
+        } catch (error) {
+          Sentry.captureException(error);
+          // Keep the welcome screen calm while the backend is still working.
+        }
+        if (Date.now() - started > 180_000) {
+          clearAnalysisPoll();
+          toast("Analysis taking longer than expected - you can check back later");
+          router.push("/dashboard");
+        }
+      }, 3000);
+    } catch (error) {
+      Sentry.captureException(error);
+      setAnalyzing(false);
+      toast.error(error instanceof Error ? error.message : "Could not start analysis");
+    }
+  }
 
   async function connectEtsy() {
     setConnecting(true);
@@ -30,6 +91,7 @@ export function OnboardingSteps({
       const data = await apiFetch<{ auth_url: string }>("/etsy/connect");
       window.location.assign(data.auth_url);
     } catch (error) {
+      Sentry.captureException(error);
       toast.error(error instanceof Error ? error.message : "Could not start Etsy OAuth");
       setConnecting(false);
     }
@@ -58,14 +120,29 @@ export function OnboardingSteps({
       setClaudeKey("");
       toast.success("Claude key saved");
       if (nextStatus.complete) {
-        router.push("/dashboard");
-        router.refresh();
+        await startAnalysis();
       }
     } catch (error) {
+      Sentry.captureException(error);
       toast.error(error instanceof Error ? error.message : "Could not save Claude key");
     } finally {
       setSaving(false);
     }
+  }
+
+  if (analyzing) {
+    return (
+      <Card className="mx-auto max-w-2xl space-y-4">
+        {analysisSteps.map((step, index) => (
+          <div key={step} className="flex items-center gap-3">
+            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-indigo-50 text-primary">
+              {index <= activeStep ? <CheckCircle2 className="h-4 w-4" /> : <Loader2 className="h-4 w-4 animate-spin" />}
+            </div>
+            <span className="text-sm font-semibold text-gray-800">{step}</span>
+          </div>
+        ))}
+      </Card>
+    );
   }
 
   return (

@@ -16,7 +16,16 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en">
       <body className={inter.className}>
         {children}
-        <Toaster position="top-right" toastOptions={{ duration: 3500 }} />
+        <Toaster
+          position="top-right"
+          toastOptions={{
+            duration: 3500,
+            style: {
+              border: "1px solid #e0e7ff",
+              color: "#312e81"
+            }
+          }}
+        />
       </body>
     </html>
   );

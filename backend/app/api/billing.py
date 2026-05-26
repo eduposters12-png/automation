@@ -18,6 +18,7 @@ router = APIRouter(prefix="/stripe", tags=["stripe"])
 
 class CheckoutRequest(BaseModel):
     plan: str
+    annual: bool = False
 
 
 class CheckoutResponse(BaseModel):
@@ -58,7 +59,7 @@ def create_checkout_session(
             customer=current_user.stripe_customer_id,
             mode="subscription",
             payment_method_types=["card"],
-            line_items=[{"price": price_id_for_plan(plan), "quantity": 1}],
+            line_items=[{"price": price_id_for_plan(plan, annual=payload.annual), "quantity": 1}],
             success_url=f"{frontend_url}/dashboard?checkout=success",
             cancel_url=f"{frontend_url}/upgrade?checkout=cancelled",
             allow_promotion_codes=True,
@@ -69,6 +70,25 @@ def create_checkout_session(
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
 
     return CheckoutResponse(url=session["url"])
+
+
+@router.post("/cancel")
+def cancel_subscription(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+) -> dict[str, bool]:
+    settings = get_settings()
+    stripe_sdk.api_key = settings.stripe_secret_key
+    if current_user.stripe_subscription_id:
+        try:
+            stripe_sdk.Subscription.delete(current_user.stripe_subscription_id)
+        except stripe_sdk.error.StripeError as exc:
+            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+    current_user.plan = Plan.FREE
+    current_user.stripe_subscription_id = None
+    db.add(current_user)
+    db.commit()
+    return {"success": True}
 
 
 def _subscription_plan(subscription: dict) -> Plan:

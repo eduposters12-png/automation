@@ -1,10 +1,12 @@
 "use client";
 
 import { Calendar, Download, ExternalLink, Loader2, RefreshCw, Trash2, UploadCloud } from "lucide-react";
+import Image from "next/image";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
 
+import { NoListingsState } from "@/components/EmptyStates";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { apiFetch } from "@/lib/api";
@@ -144,15 +146,18 @@ export default function MyListingsPage() {
         ))}
       </div>
 
-      <Card className="p-0">
-        {loading ? (
-          <div className="flex min-h-64 items-center justify-center">
-            <Loader2 className="h-6 w-6 animate-spin text-primary" />
-          </div>
-        ) : listings.length === 0 ? (
-          <div className="p-8 text-center text-sm text-gray-500">No listings found.</div>
-        ) : (
-          <div className="overflow-x-auto">
+      {!loading && listings.length === 0 && filter === "ALL" ? (
+        <NoListingsState />
+      ) : (
+        <Card className="p-0">
+          {loading ? (
+            <div className="flex min-h-64 items-center justify-center">
+              <Loader2 className="h-6 w-6 animate-spin text-primary" />
+            </div>
+          ) : listings.length === 0 ? (
+            <div className="p-8 text-center text-sm text-gray-500">No listings found.</div>
+          ) : (
+            <div className="overflow-x-auto">
             <table className="w-full min-w-[920px] border-collapse text-left">
               <thead>
                 <tr className="border-b border-gray-100 text-xs uppercase text-gray-500">
@@ -180,9 +185,9 @@ export default function MyListingsPage() {
                       </td>
                       <td className="px-4 py-4">
                         <div className="flex items-center gap-3">
-                          <div className="h-14 w-14 overflow-hidden rounded-md bg-gray-100">
+                          <div className="relative h-14 w-14 overflow-hidden rounded-md bg-gray-100">
                             {thumbnail ? (
-                              <img src={thumbnail} alt={listing.title || "Listing thumbnail"} className="h-full w-full object-cover" />
+                              <Image src={thumbnail} alt={listing.title || "Listing thumbnail"} fill className="object-cover" sizes="56px" />
                             ) : null}
                           </div>
                           <div className="min-w-0">
@@ -235,9 +240,10 @@ export default function MyListingsPage() {
                 })}
               </tbody>
             </table>
-          </div>
-        )}
-      </Card>
+            </div>
+          )}
+        </Card>
+      )}
 
       <div className="flex items-center justify-between gap-3">
         <Button type="button" variant="secondary" disabled={page <= 1} onClick={() => setPage((current) => Math.max(1, current - 1))}>

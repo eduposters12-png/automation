@@ -10,6 +10,7 @@ class SettingsResponse(BaseModel):
     niche: str | None
     etsy_connected: bool
     claude_key_added: bool
+    claude_key_last4: str | None = None
 
 
 class SettingsUpdateRequest(BaseModel):

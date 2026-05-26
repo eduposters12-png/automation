@@ -1,6 +1,7 @@
 "use client";
 
 import { CheckSquare, Loader2, UploadCloud } from "lucide-react";
+import Image from "next/image";
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import toast from "react-hot-toast";
@@ -153,8 +154,8 @@ function BulkListingsContent() {
                     checked={selected.includes(listing.id)}
                     onChange={() => toggleListing(listing.id)}
                   />
-                  <div className="h-14 w-14 overflow-hidden rounded-md bg-gray-100">
-                    {thumbnail ? <img src={thumbnail} alt={listing.title || "Listing thumbnail"} className="h-full w-full object-cover" /> : null}
+                  <div className="relative h-14 w-14 overflow-hidden rounded-md bg-gray-100">
+                    {thumbnail ? <Image src={thumbnail} alt={listing.title || "Listing thumbnail"} fill className="object-cover" sizes="56px" /> : null}
                   </div>
                   <div className="min-w-0">
                     <p className="truncate text-sm font-semibold text-gray-950">{listing.title || "Untitled listing"}</p>

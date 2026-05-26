@@ -1,4 +1,4 @@
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy import select
@@ -9,7 +9,7 @@ from backend.app.core.deps import get_current_user
 from backend.app.core.security import create_access_token, hash_password, verify_password
 from backend.app.db.session import get_db
 from backend.app.models.user import User
-from backend.app.schemas.auth import AuthResponse, LoginRequest, RegisterRequest, UserOut
+from backend.app.schemas.auth import AuthResponse, ChangePasswordRequest, LoginRequest, ProfileUpdateRequest, RegisterRequest, UserOut
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -53,7 +53,7 @@ def register(payload: RegisterRequest, response: Response, db: Session = Depends
 
 @router.post("/login", response_model=AuthResponse)
 def login(payload: LoginRequest, response: Response, db: Session = Depends(get_db)) -> AuthResponse:
-    user = db.scalar(select(User).where(User.email == payload.email.lower()))
+    user = db.scalar(select(User).where(User.email == payload.email.lower(), User.deleted_at.is_(None)))
     if not user or not verify_password(payload.password, user.password_hash):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
 
@@ -77,3 +77,50 @@ def logout(response: Response) -> dict[str, bool]:
 @router.get("/me", response_model=AuthResponse)
 def me(current_user: User = Depends(get_current_user)) -> AuthResponse:
     return AuthResponse(user=UserOut.model_validate(current_user))
+
+
+@router.patch("/profile", response_model=AuthResponse)
+def update_profile(
+    payload: ProfileUpdateRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+) -> AuthResponse:
+    current_user.name = payload.name.strip()
+    db.add(current_user)
+    db.commit()
+    db.refresh(current_user)
+    return AuthResponse(user=UserOut.model_validate(current_user))
+
+
+@router.post("/change-password")
+def change_password(
+    payload: ChangePasswordRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+) -> dict[str, bool]:
+    if not verify_password(payload.old_password, current_user.password_hash):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Current password is incorrect")
+    current_user.password_hash = hash_password(payload.new_password)
+    db.add(current_user)
+    db.commit()
+    return {"success": True}
+
+
+@router.delete("/account")
+def delete_account(
+    response: Response,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+) -> dict[str, bool]:
+    current_user.deleted_at = datetime.now(timezone.utc)
+    db.add(current_user)
+    db.commit()
+    settings = get_settings()
+    response.delete_cookie(
+        key=settings.cookie_name,
+        httponly=True,
+        secure=settings.cookie_secure,
+        samesite="lax",
+        domain=settings.cookie_domain
+    )
+    return {"success": True}

@@ -30,6 +30,9 @@ class Settings(BaseSettings):
     stripe_basic_price_id: str = Field(alias="STRIPE_BASIC_PRICE_ID")
     stripe_pro_price_id: str = Field(alias="STRIPE_PRO_PRICE_ID")
     stripe_agency_price_id: str = Field(alias="STRIPE_AGENCY_PRICE_ID")
+    stripe_annual_basic_price_id: str = Field(default="", alias="STRIPE_ANNUAL_BASIC_PRICE_ID")
+    stripe_annual_pro_price_id: str = Field(default="", alias="STRIPE_ANNUAL_PRO_PRICE_ID")
+    stripe_annual_agency_price_id: str = Field(default="", alias="STRIPE_ANNUAL_AGENCY_PRICE_ID")
 
     cookie_name: str = "listify_session"
     cookie_domain: str | None = Field(default=None, alias="COOKIE_DOMAIN")

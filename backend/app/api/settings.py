@@ -2,13 +2,22 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from backend.app.core.deps import get_current_user
-from backend.app.core.security import encrypt_secret
+from backend.app.core.security import decrypt_secret, encrypt_secret
 from backend.app.db.session import get_db
 from backend.app.models.user import User
 from backend.app.schemas.settings import SettingsResponse, SettingsUpdateRequest
 from backend.app.services.shops import get_or_create_primary_shop, get_primary_shop
 
 router = APIRouter(prefix="/settings", tags=["settings"])
+
+
+def _claude_last4(shop) -> str | None:
+    if not shop or not shop.claude_api_key_encrypted:
+        return None
+    try:
+        return decrypt_secret(shop.claude_api_key_encrypted)[-4:]
+    except Exception:
+        return None
 
 
 @router.get("", response_model=SettingsResponse)
@@ -25,7 +34,8 @@ def get_settings(
         shop_url=shop.shop_url if shop else None,
         niche=shop.niche if shop else None,
         etsy_connected=bool(shop and shop.etsy_access_token_encrypted),
-        claude_key_added=bool(shop and shop.claude_api_key_encrypted)
+        claude_key_added=bool(shop and shop.claude_api_key_encrypted),
+        claude_key_last4=_claude_last4(shop)
     )
 
 
@@ -59,5 +69,6 @@ def update_settings(
         shop_url=shop.shop_url,
         niche=shop.niche,
         etsy_connected=bool(shop.etsy_access_token_encrypted),
-        claude_key_added=bool(shop.claude_api_key_encrypted)
+        claude_key_added=bool(shop.claude_api_key_encrypted),
+        claude_key_last4=_claude_last4(shop)
     )

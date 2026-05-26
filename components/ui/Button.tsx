@@ -14,10 +14,10 @@ type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
 };
 
 const variants: Record<ButtonVariant, string> = {
-  primary: "bg-primary text-white hover:bg-indigo-500 focus-visible:ring-primary",
-  secondary: "border border-gray-200 bg-white text-gray-900 hover:bg-gray-50 focus-visible:ring-gray-300",
-  ghost: "text-gray-700 hover:bg-gray-100 focus-visible:ring-gray-300",
-  danger: "bg-red-600 text-white hover:bg-red-500 focus-visible:ring-red-600"
+  primary: "bg-primary text-white hover:bg-indigo-500 active:bg-indigo-600 focus-visible:ring-primary",
+  secondary: "border border-gray-200 bg-white text-gray-900 hover:bg-gray-50 active:bg-gray-100 focus-visible:ring-gray-300",
+  ghost: "text-gray-700 hover:bg-gray-100 active:bg-gray-200 focus-visible:ring-gray-300",
+  danger: "bg-red-600 text-white hover:bg-red-500 active:bg-red-700 focus-visible:ring-red-600"
 };
 
 export function Button({

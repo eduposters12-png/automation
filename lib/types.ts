@@ -22,6 +22,7 @@ export type DashboardStats = {
   shop_limit: number;
   etsy_connected: boolean;
   claude_key_added: boolean;
+  claude_key_last4?: string | null;
 };
 
 export type OnboardingStatus = {
@@ -39,6 +40,43 @@ export type SettingsResponse = {
   niche: string | null;
   etsy_connected: boolean;
   claude_key_added: boolean;
+  claude_key_last4?: string | null;
+};
+
+export type UsageAction = "IMAGE_GENERATED" | "VIDEO_GENERATED" | "LISTING_UPLOADED";
+
+export type UsageWithLimit = {
+  used: number;
+  limit: number;
+};
+
+export type AnalyticsDashboard = {
+  total_listings: number;
+  live_listings: number;
+  usage_this_month: Record<UsageAction, UsageWithLimit>;
+  plan: Plan;
+  recent_listings: {
+    id: string;
+    title: string | null;
+    status: Listing["status"];
+    primary_image_url: string | null;
+    created_at: string;
+  }[];
+  shop: {
+    niche: string | null;
+    last_analyzed_at: string | null;
+  };
+};
+
+export type AnalyticsUsageResponse = {
+  usage: Record<UsageAction, number>;
+  usage_with_limits: Record<UsageAction, UsageWithLimit>;
+  plan: Plan;
+};
+
+export type TestConnectionResponse = {
+  success: boolean;
+  message: string;
 };
 
 export type ProductPotential = "High" | "Medium" | "Low";
@@ -82,7 +120,7 @@ export type Listing = {
   title: string | null;
   description: string | null;
   tags: string[];
-  price: string | null;
+  price: number | null;
   is_bundle: boolean;
   etsy_listing_id: string | null;
   error_message: string | null;
