@@ -1,4 +1,5 @@
 import uuid
+from datetime import datetime, timezone
 
 from pydantic import BaseModel
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -9,9 +10,12 @@ import stripe as stripe_sdk
 from backend.app.core.config import get_settings
 from backend.app.core.deps import get_current_user
 from backend.app.core.plans import normalize_plan
+from backend.app.core.security import decrypt_secret
 from backend.app.db.session import get_db
 from backend.app.models.user import Plan, User
 from backend.app.services import credit_service
+from backend.app.services.claude_balance_service import check_claude_key_status
+from backend.app.services.shops import get_primary_shop
 from backend.app.services.stripe import plan_for_price_id, price_id_for_plan
 
 router = APIRouter(prefix="/stripe", tags=["stripe"])
@@ -100,6 +104,47 @@ def _subscription_plan(subscription: dict) -> Plan:
     return plan_for_price_id(price_id)
 
 
+def _subscription_period_start(subscription: dict) -> int:
+    return int(
+        subscription.get("current_period_start")
+        or subscription.get("created")
+        or datetime.now(timezone.utc).timestamp()
+    )
+
+
+def _safe_retrieve_subscription(subscription_id: str | None) -> dict | None:
+    if not subscription_id:
+        return None
+    try:
+        return stripe_sdk.Subscription.retrieve(subscription_id)
+    except stripe_sdk.error.StripeError:
+        return None
+
+
+def _checkout_plan(session: dict, subscription: dict | None = None) -> Plan:
+    metadata_plan = session.get("metadata", {}).get("plan")
+    if metadata_plan:
+        try:
+            return normalize_plan(metadata_plan)
+        except ValueError:
+            pass
+    if subscription:
+        return _subscription_plan(subscription)
+    return Plan.FREE
+
+
+def _checkout_period_start(session: dict, subscription: dict | None = None) -> int:
+    metadata_period_start = session.get("metadata", {}).get("period_start")
+    if metadata_period_start:
+        try:
+            return int(metadata_period_start)
+        except (TypeError, ValueError):
+            pass
+    if subscription:
+        return _subscription_period_start(subscription)
+    return int(datetime.now(timezone.utc).timestamp())
+
+
 def _invoice_plan(invoice: dict) -> Plan:
     lines = invoice.get("lines", {}).get("data", [])
     if not lines:
@@ -114,7 +159,7 @@ def _invoice_period_start(invoice: dict) -> int:
         period_start = lines[0].get("period", {}).get("start")
         if period_start:
             return int(period_start)
-    return int(invoice.get("period_start") or invoice.get("created") or 0)
+    return int(invoice.get("period_start") or invoice.get("created") or datetime.now(timezone.utc).timestamp())
 
 
 @router.post("/webhook")
@@ -145,27 +190,41 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)) -> dic
         except ValueError:
             user = None
         if user:
+            subscription = _safe_retrieve_subscription(obj.get("subscription"))
+            new_plan = _checkout_plan(obj, subscription)
+            period_start = _checkout_period_start(obj, subscription)
             user.stripe_customer_id = obj.get("customer") or user.stripe_customer_id
             user.stripe_subscription_id = obj.get("subscription") or user.stripe_subscription_id
+            if new_plan != Plan.FREE:
+                user.plan = new_plan
             db.add(user)
             db.commit()
+            if new_plan != Plan.FREE:
+                credit_service.start_credit_cycle(
+                    db,
+                    user.id,
+                    datetime.fromtimestamp(period_start, tz=timezone.utc)
+                )
+                credit_service.reset_plan_credits(db, user.id, new_plan.value, period_start)
 
     if event_type in {"customer.subscription.created", "customer.subscription.updated"}:
         customer_id = obj.get("customer")
         user = db.scalar(select(User).where(User.stripe_customer_id == customer_id))
         if user:
             status_value = obj.get("status")
-            user.plan = _subscription_plan(obj) if status_value in {"active", "trialing"} else Plan.FREE
+            new_plan = _subscription_plan(obj) if status_value in {"active", "trialing"} else Plan.FREE
+            user.plan = new_plan
             user.stripe_subscription_id = obj.get("id") or user.stripe_subscription_id
             db.add(user)
             db.commit()
-            if event_type == "customer.subscription.created" and user.plan != Plan.FREE:
-                credit_service.grant_plan_credits(
+            if new_plan != Plan.FREE:
+                current_period_start = _subscription_period_start(obj)
+                credit_service.start_credit_cycle(
                     db,
                     user.id,
-                    user.plan.value,
-                    int(obj.get("current_period_start") or obj.get("created") or 0)
+                    datetime.fromtimestamp(current_period_start, tz=timezone.utc)
                 )
+                credit_service.reset_plan_credits(db, user.id, new_plan.value, current_period_start)
 
     if event_type == "invoice.payment_succeeded":
         customer_id = obj.get("customer")
@@ -173,7 +232,16 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)) -> dic
         if user:
             plan = _invoice_plan(obj)
             if plan != Plan.FREE:
-                credit_service.grant_plan_credits(db, user.id, plan.value, _invoice_period_start(obj))
+                period_start = _invoice_period_start(obj)
+                user.plan = plan
+                db.add(user)
+                db.commit()
+                credit_service.start_credit_cycle(
+                    db,
+                    user.id,
+                    datetime.fromtimestamp(period_start, tz=timezone.utc)
+                )
+                credit_service.reset_plan_credits(db, user.id, plan.value, period_start)
 
     if event_type == "customer.subscription.deleted":
         customer_id = obj.get("customer")
@@ -181,7 +249,56 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)) -> dic
         if user:
             user.plan = Plan.FREE
             user.stripe_subscription_id = None
+            user.credit_cycle_start = None
+            user.credit_cycle_end = None
+            user.credit_balance = 0
             db.add(user)
             db.commit()
 
     return {"received": True}
+
+
+@router.get("/credit-status")
+async def credit_status(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+) -> dict[str, object]:
+    shop = get_primary_shop(db, current_user)
+    software_status = credit_service.get_credit_status(db, current_user.id)
+
+    if shop and shop.claude_api_key_encrypted:
+        claude_key = decrypt_secret(shop.claude_api_key_encrypted)
+        claude_status = await check_claude_key_status(claude_key, user_id=current_user.id)
+    else:
+        claude_status = {
+            "working": False,
+            "status": "no_key",
+            "message": "No Claude API key configured"
+        }
+
+    software_depleted = software_status["software_credits"]["depleted"]
+    claude_exhausted = claude_status["status"] in {"credits_exhausted", "invalid_key"}
+
+    if software_depleted and claude_exhausted:
+        alert_state = "both_depleted"
+    elif software_depleted:
+        alert_state = "software_depleted"
+    elif claude_exhausted:
+        alert_state = "claude_depleted"
+    elif software_status["software_credits"]["low"]:
+        alert_state = "software_low"
+    else:
+        alert_state = "ok"
+
+    return {
+        "alert_state": alert_state,
+        "software_credits": software_status["software_credits"],
+        "claude": {
+            "working": claude_status["working"],
+            "status": claude_status["status"],
+            "message": claude_status["message"]
+        },
+        "plan": software_status["plan"],
+        "cycle_end": software_status["cycle_end"],
+        "days_until_reset": software_status["software_credits"]["days_until_reset"]
+    }

@@ -27,6 +27,7 @@ import { Modal } from "@/components/ui/Modal";
 import { InsufficientCreditsModal } from "@/components/InsufficientCreditsModal";
 import { ApiError, apiFetch } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { useCreditStatus } from "@/lib/useCreditStatus";
 import type {
   ApproveImageResponse,
   AuthResponse,
@@ -75,6 +76,7 @@ export function NewListingForm({
   initialProductIdeaIndex = "0"
 }: NewListingFormProps) {
   const router = useRouter();
+  const { refetch: refetchCreditStatus } = useCreditStatus(false);
   const [step, setStep] = useState<Step>(1);
   const [plan, setPlan] = useState<Plan | null>(null);
   const [productIdeaIndex] = useState(() => parseProductIndex(initialProductIdeaIndex));
@@ -217,6 +219,7 @@ export function NewListingForm({
       });
       setListingId(response.listing_id);
       applyGeneratedImage(response);
+      void refetchCreditStatus();
       toast.success("Image generated");
     } catch (error) {
       handleApiError(error, () => generateImage(), "Image generation failed. Please try again.");
@@ -235,6 +238,7 @@ export function NewListingForm({
         json: { use_improved_prompt: useImprovedPrompt }
       });
       applyGeneratedImage(response);
+      void refetchCreditStatus();
       toast.success("Image regenerated");
     } catch (error) {
       handleApiError(error, () => regenerateImage(useImprovedPrompt), "Image generation failed. Please try again.");
@@ -258,6 +262,7 @@ export function NewListingForm({
       });
       setImageUrls(response.image_urls);
       setCurrentImageUrl(response.image_url);
+      void refetchCreditStatus();
       toast.success("High resolution image generated");
     } catch (error) {
       handleApiError(error, generateHighRes, "Image generation failed. Please try again.");
@@ -304,6 +309,7 @@ export function NewListingForm({
         json: payload(false, true)
       });
       applyGeneratedImage(response);
+      void refetchCreditStatus();
       toast.success("Image added");
     } catch (error) {
       handleApiError(error, addAnotherImage, "Image generation failed. Please try again.");
@@ -419,7 +425,7 @@ export function NewListingForm({
               <Button type="submit" loading={loadingAction === "generate"} icon={<Sparkles className="h-4 w-4" />}>
                 Generate Image
               </Button>
-              <span className="text-sm font-medium text-gray-500">(costs 5 credits)</span>
+              <span className="text-sm font-medium text-gray-500">(5 credits)</span>
             </div>
           </form>
         </Card>
@@ -509,7 +515,7 @@ export function NewListingForm({
             <Button type="button" onClick={addAnotherImage} loading={loadingAction === "add"} icon={<Plus className="h-4 w-4" />}>
               Add Another Image
             </Button>
-            <span className="text-sm font-medium text-gray-500">(costs 5 credits)</span>
+            <span className="text-sm font-medium text-gray-500">(5 credits)</span>
           </Card>
 
           {loadingAction === "add" ? (

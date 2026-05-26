@@ -11,13 +11,14 @@ from backend.app.core.security import encrypt_secret
 from backend.app.db.session import get_db
 from backend.app.models.shop import Shop
 from backend.app.models.user import User
+from backend.app.schemas.etsy import EtsyConnectionStatus, EtsyDisconnectResponse
 from backend.app.services.etsy import (
     create_authorization_url,
     create_pkce_pair,
     exchange_code_for_token,
     fetch_primary_shop
 )
-from backend.app.services.shops import get_or_create_primary_shop
+from backend.app.services.shops import get_or_create_primary_shop, get_primary_shop
 
 router = APIRouter(prefix="/etsy", tags=["etsy"])
 
@@ -99,3 +100,41 @@ async def etsy_callback(
 
     response.headers["location"] = f"{redirect_url}?etsy=connected"
     return response
+
+
+@router.get("/connection-status", response_model=EtsyConnectionStatus)
+def etsy_connection_status(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+) -> EtsyConnectionStatus:
+    shop = get_primary_shop(db, current_user)
+    if not shop or not shop.etsy_access_token_encrypted:
+        return EtsyConnectionStatus(connected=False)
+
+    return EtsyConnectionStatus(
+        connected=True,
+        shop_name=shop.shop_name,
+        shop_url=shop.shop_url,
+        etsy_shop_id=shop.etsy_shop_id,
+        connected_at=None
+    )
+
+
+@router.post("/disconnect", response_model=EtsyDisconnectResponse)
+def disconnect_etsy(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+) -> EtsyDisconnectResponse:
+    shop = get_primary_shop(db, current_user)
+    if not shop:
+        return EtsyDisconnectResponse(success=True, message="No shop connected")
+
+    shop.etsy_access_token_encrypted = None
+    shop.etsy_refresh_token_encrypted = None
+    shop.etsy_token_expires_at = None
+    shop.etsy_shop_id = None
+    shop.shop_name = None
+    db.add(shop)
+    db.commit()
+
+    return EtsyDisconnectResponse(success=True, message="Etsy account disconnected successfully")

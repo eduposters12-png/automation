@@ -1,7 +1,7 @@
 "use client";
 
 import * as Sentry from "@sentry/nextjs";
-import { CheckCircle2, Coins, KeyRound, Loader2, Trash2, XCircle } from "lucide-react";
+import { CheckCircle2, Coins, ExternalLink, KeyRound, Loader2, Store, Trash2, XCircle } from "lucide-react";
 import { FormEvent, useEffect, useState } from "react";
 import toast from "react-hot-toast";
 
@@ -16,6 +16,7 @@ import type {
   AuthResponse,
   CreditBalance,
   CreditHistoryEntry,
+  EtsyConnectionStatus,
   SettingsResponse,
   TestConnectionResponse
 } from "@/lib/types";
@@ -27,8 +28,28 @@ const featureText = {
   AGENCY: ["2000 credits/month", "500 images/month", "200 videos/month", "500 uploads/month"]
 };
 
+const disconnectedEtsyStatus: EtsyConnectionStatus = {
+  connected: false,
+  shop_name: null,
+  shop_url: null,
+  etsy_shop_id: null,
+  connected_at: null
+};
+
 function captureUiError(error: unknown) {
   Sentry.captureException(error);
+}
+
+function formatConnectedDate(value: string | null) {
+  if (!value) {
+    return "Not available";
+  }
+
+  return new Intl.DateTimeFormat("en-GB", {
+    day: "numeric",
+    month: "long",
+    year: "numeric"
+  }).format(new Date(value));
 }
 
 export default function SettingsPage() {
@@ -36,6 +57,7 @@ export default function SettingsPage() {
   const [usage, setUsage] = useState<AnalyticsUsageResponse | null>(null);
   const [credits, setCredits] = useState<CreditBalance | null>(null);
   const [creditHistory, setCreditHistory] = useState<CreditHistoryEntry[]>([]);
+  const [etsyStatus, setEtsyStatus] = useState<EtsyConnectionStatus | null>(null);
   const [claudeKey, setClaudeKey] = useState("");
   const [name, setName] = useState("");
   const [oldPassword, setOldPassword] = useState("");
@@ -43,6 +65,10 @@ export default function SettingsPage() {
   const [deleteText, setDeleteText] = useState("");
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [etsyLoading, setEtsyLoading] = useState(true);
+  const [etsyConnecting, setEtsyConnecting] = useState(false);
+  const [etsyDisconnecting, setEtsyDisconnecting] = useState(false);
+  const [showDisconnectConfirm, setShowDisconnectConfirm] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState<Record<string, boolean | null>>({ etsy: null, claude: null });
 
   async function loadSettings() {
@@ -69,9 +95,52 @@ export default function SettingsPage() {
     }
   }
 
+  async function loadEtsyStatus() {
+    setEtsyLoading(true);
+    try {
+      const response = await apiFetch<EtsyConnectionStatus>("/etsy/connection-status");
+      setEtsyStatus(response);
+    } catch (error) {
+      captureUiError(error);
+      setEtsyStatus(disconnectedEtsyStatus);
+    } finally {
+      setEtsyLoading(false);
+    }
+  }
+
   useEffect(() => {
     void loadSettings();
+    void loadEtsyStatus();
   }, []);
+
+  async function connectEtsy() {
+    setEtsyConnecting(true);
+    try {
+      const data = await apiFetch<{ auth_url: string }>("/etsy/connect");
+      window.location.assign(data.auth_url);
+    } catch (error) {
+      captureUiError(error);
+      toast.error(error instanceof Error ? error.message : "Could not start Etsy OAuth");
+      setEtsyConnecting(false);
+    }
+  }
+
+  async function handleDisconnect() {
+    setEtsyDisconnecting(true);
+    try {
+      const response = await apiFetch<{ success: boolean; message: string }>("/etsy/disconnect", { method: "POST" });
+      setEtsyStatus(disconnectedEtsyStatus);
+      setSettings((current) => current ? { ...current, shop_name: null, etsy_connected: false } : current);
+      setConnectionStatus((current) => ({ ...current, etsy: false }));
+      setShowDisconnectConfirm(false);
+      toast.success(response.message);
+    } catch (error) {
+      captureUiError(error);
+      toast.error(error instanceof Error ? error.message : "Could not disconnect Etsy");
+    } finally {
+      setEtsyDisconnecting(false);
+    }
+  }
 
   async function updateClaude() {
     if (!claudeKey.trim()) return;
@@ -184,6 +253,92 @@ export default function SettingsPage() {
         <h1 className="text-2xl font-bold text-gray-950">Settings</h1>
         <p className="mt-1 text-sm text-gray-600">Shop, subscription, and account controls.</p>
       </div>
+
+      <Card className="space-y-5">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div className="flex items-start gap-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-indigo-50 text-primary">
+              <Store className="h-5 w-5" aria-hidden="true" />
+            </div>
+            <div>
+              <h2 className="text-base font-semibold text-gray-950">Etsy Connection</h2>
+              <p className="mt-1 text-sm text-gray-600">Manage the Etsy shop linked to this account.</p>
+            </div>
+          </div>
+          {!etsyLoading && etsyStatus ? (
+            <span className={etsyStatus.connected ? "inline-flex items-center gap-2 text-sm font-semibold text-emerald-700" : "inline-flex items-center gap-2 text-sm font-semibold text-red-700"}>
+              <span className={etsyStatus.connected ? "h-2 w-2 rounded-full bg-emerald-500" : "h-2 w-2 rounded-full bg-red-500"} />
+              {etsyStatus.connected ? "Connected" : "Not Connected"}
+            </span>
+          ) : null}
+        </div>
+
+        {etsyLoading ? (
+          <div className="flex items-center gap-3 rounded-lg border border-gray-100 bg-gray-50 px-4 py-4 text-sm font-medium text-gray-600">
+            <Loader2 className="h-4 w-4 animate-spin text-primary" aria-hidden="true" />
+            Checking connection...
+          </div>
+        ) : etsyStatus?.connected ? (
+          <div className="space-y-4">
+            <div className="rounded-lg bg-gray-50 p-4">
+              <p className="text-lg font-bold text-gray-950">{etsyStatus.shop_name || "Connected Etsy shop"}</p>
+              {etsyStatus.shop_url ? (
+                <a
+                  href={etsyStatus.shop_url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="mt-1 inline-flex items-center gap-1 text-sm font-medium text-primary hover:text-indigo-500"
+                >
+                  {etsyStatus.shop_url}
+                  <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
+                </a>
+              ) : null}
+              <div className="mt-3 space-y-1 text-sm text-gray-600">
+                <p>Connected since: {formatConnectedDate(etsyStatus.connected_at)}</p>
+                <p>Etsy Shop ID: {etsyStatus.etsy_shop_id || "Not available"}</p>
+              </div>
+            </div>
+            <Button
+              type="button"
+              variant="secondary"
+              className="border-red-300 text-red-600 hover:bg-red-50"
+              onClick={() => setShowDisconnectConfirm(true)}
+            >
+              Disconnect
+            </Button>
+            {showDisconnectConfirm ? (
+              <div className="space-y-4 rounded-lg border border-red-200 bg-red-50 p-4">
+                <div>
+                  <p className="text-sm font-semibold text-red-800">Are you sure you want to disconnect your Etsy shop?</p>
+                  <p className="mt-1 text-sm leading-6 text-red-700">
+                    This will remove your Etsy connection. Your listings and settings will not be deleted. You can reconnect anytime.
+                  </p>
+                </div>
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <Button
+                    type="button"
+                    variant="danger"
+                    loading={etsyDisconnecting}
+                    onClick={handleDisconnect}
+                  >
+                    Yes, Disconnect
+                  </Button>
+                  <Button type="button" variant="ghost" onClick={() => setShowDisconnectConfirm(false)}>
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+            ) : null}
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <p className="text-sm leading-6 text-gray-600">Connect your Etsy shop to enable automatic listing uploads.</p>
+            <Button type="button" onClick={connectEtsy} loading={etsyConnecting}>
+              Connect Etsy Shop
+            </Button>
+          </div>
+        )}
+      </Card>
 
       <Card className="space-y-5">
         <h2 className="text-base font-semibold text-gray-950">Shop Settings</h2>

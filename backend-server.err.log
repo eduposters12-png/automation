@@ -1,0 +1,139 @@
+INFO:     Will watch for changes in these directories: ['D:\\My Coding Projects\\automation\\backend']
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+INFO:     Started reloader process [2328] using WatchFiles
+INFO:     Started server process [1140]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:listifyai.requests:GET /health 200 5.97ms
+INFO:listifyai.requests:GET /health 200 4.30ms
+WARNING:  WatchFiles detected changes in 'sitecustomize.py'. Reloading...
+INFO:listifyai.requests:GET /health 200 2.75ms
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [1140]
+WARNING:  WatchFiles detected changes in 'app\main.py', 'sitecustomize.py', 'alembic\env.py'. Reloading...
+INFO:     Started server process [8500]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:listifyai.requests:GET /docs 200 1.48ms
+INFO:listifyai.requests:OPTIONS /auth/login 200 1.08ms
+INFO:listifyai.requests:POST /auth/login 401 156.16ms
+INFO:listifyai.requests:OPTIONS /auth/register 200 0.62ms
+INFO:listifyai.requests:POST /auth/register 201 745.30ms
+INFO:listifyai.requests:GET /auth/me 200 159.00ms
+INFO:listifyai.requests:GET /onboarding/status 200 162.83ms
+INFO:listifyai.requests:GET /auth/me 200 25.65ms
+INFO:listifyai.requests:GET /onboarding/status 200 27.41ms
+INFO:listifyai.requests:GET /stripe/credit-status 200 14.07ms
+INFO:listifyai.requests:GET /stripe/credit-status 200 11.15ms
+INFO:listifyai.requests:GET /stripe/credit-status 200 9.19ms
+INFO:listifyai.requests:GET /stripe/credit-status 200 9.59ms
+INFO:listifyai.requests:GET /health 200 4.38ms
+INFO:listifyai.requests:GET /etsy/connect 200 16.49ms
+INFO:listifyai.requests:GET /onboarding/status 200 36.97ms
+INFO:listifyai.requests:GET /auth/me 200 34.91ms
+INFO:listifyai.requests:GET /stripe/credit-status 200 17.37ms
+INFO:listifyai.requests:GET /stripe/credit-status 200 16.30ms
+INFO:listifyai.requests:GET /stripe/credit-status 200 12.62ms
+INFO:listifyai.requests:GET /stripe/credit-status 200 13.26ms
+INFO:listifyai.requests:OPTIONS /auth/login 200 0.84ms
+INFO:listifyai.requests:POST /auth/login 401 16.10ms
+INFO:listifyai.requests:POST /auth/login 200 712.06ms
+INFO:listifyai.requests:GET /auth/me 200 9.04ms
+INFO:listifyai.requests:GET /auth/me 200 8.15ms
+INFO:listifyai.requests:GET /auth/me 200 6.18ms
+INFO:listifyai.requests:GET /stripe/credit-status 200 19.35ms
+INFO:listifyai.requests:GET /credits/balance 200 65.85ms
+INFO:listifyai.requests:GET /stripe/credit-status 200 49.51ms
+INFO:listifyai.requests:GET /analytics/dashboard 200 81.23ms
+INFO:listifyai.requests:GET /stripe/credit-status 200 33.93ms
+INFO:listifyai.requests:GET /credits/balance 200 51.13ms
+INFO:listifyai.requests:GET /analytics/dashboard 200 50.05ms
+INFO:listifyai.requests:GET /stripe/credit-status 200 26.79ms
+INFO:listifyai.requests:GET /shop/analysis 200 8.80ms
+INFO:listifyai.requests:GET /shop/analysis 200 11.55ms
+INFO:listifyai.requests:POST /shop/analyze 403 4.21ms
+INFO:listifyai.requests:GET /shop/analysis 200 9.51ms
+INFO:listifyai.requests:GET /shop/analysis 200 7.65ms
+INFO:listifyai.requests:GET /listings 200 16.35ms
+INFO:listifyai.requests:GET /listings 200 11.76ms
+INFO:listifyai.requests:GET /settings 200 14.98ms
+INFO:listifyai.requests:GET /analytics/usage 200 16.36ms
+INFO:listifyai.requests:GET /settings 200 15.98ms
+INFO:listifyai.requests:GET /analytics/usage 200 14.15ms
+INFO:listifyai.requests:GET /credits/balance 200 14.15ms
+INFO:listifyai.requests:GET /credits/history 200 21.29ms
+INFO:listifyai.requests:GET /credits/balance 200 13.21ms
+INFO:listifyai.requests:GET /credits/history 200 11.77ms
+INFO:listifyai.requests:OPTIONS /shop/test-connection 200 0.41ms
+INFO:listifyai.requests:POST /shop/test-connection 400 6.79ms
+INFO:listifyai.requests:GET /credits/balance 200 16.72ms
+INFO:listifyai.requests:GET /analytics/dashboard 200 20.63ms
+INFO:listifyai.requests:GET /credits/balance 200 20.45ms
+INFO:listifyai.requests:GET /analytics/dashboard 200 21.77ms
+INFO:listifyai.requests:GET / 404 19.62ms
+INFO:listifyai.requests:GET /favicon.ico 404 1.34ms
+INFO:listifyai.requests:GET /docs 200 24.76ms
+INFO:listifyai.requests:GET /health 200 47.02ms
+INFO:listifyai.requests:GET / 404 1.95ms
+INFO:listifyai.requests:GET / 404 18.95ms
+INFO:listifyai.requests:GET /favicon.ico 404 2.10ms
+INFO:listifyai.requests:GET /health 200 3.88ms
+INFO:listifyai.requests:GET /docs 200 2.09ms
+INFO:listifyai.requests:GET / 404 1.17ms
+INFO:listifyai.requests:GET / 404 1.31ms
+INFO:listifyai.requests:OPTIONS /auth/login 200 10.64ms
+INFO:listifyai.requests:POST /auth/login 200 820.92ms
+INFO:listifyai.requests:GET /auth/me 200 11.50ms
+INFO:listifyai.requests:GET /auth/me 200 8.75ms
+INFO:listifyai.requests:GET /stripe/credit-status 200 29.45ms
+INFO:listifyai.requests:GET /analytics/dashboard 200 39.88ms
+INFO:listifyai.requests:GET /credits/balance 200 18.55ms
+INFO:listifyai.requests:GET /stripe/credit-status 200 7.58ms
+INFO:listifyai.requests:GET /credits/balance 200 11.36ms
+INFO:listifyai.requests:GET /analytics/dashboard 200 14.59ms
+INFO:listifyai.requests:GET /stripe/credit-status 200 7.21ms
+INFO:listifyai.requests:GET /stripe/credit-status 200 7.78ms
+INFO:listifyai.requests:GET /auth/me 200 5.86ms
+INFO:listifyai.requests:GET /auth/me 200 7.35ms
+INFO:listifyai.requests:GET /settings 200 35.98ms
+INFO:listifyai.requests:GET /analytics/usage 200 40.84ms
+INFO:listifyai.requests:GET /analytics/usage 200 41.83ms
+INFO:listifyai.requests:GET /settings 200 56.83ms
+INFO:listifyai.requests:GET /credits/history 200 61.68ms
+INFO:listifyai.requests:GET /credits/balance 200 31.34ms
+INFO:listifyai.requests:GET /credits/history 200 29.17ms
+INFO:listifyai.requests:GET /credits/balance 200 18.62ms
+WARNING:  WatchFiles detected changes in 'app\schemas\etsy.py'. Reloading...
+INFO:listifyai.requests:GET /auth/me 200 14.58ms
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [8500]
+WARNING:  WatchFiles detected changes in 'app\api\etsy.py'. Reloading...
+INFO:     Started server process [8796]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:listifyai.requests:GET /settings 200 80.00ms
+INFO:listifyai.requests:GET /etsy/connection-status 200 83.28ms
+INFO:listifyai.requests:GET /analytics/usage 200 85.14ms
+INFO:listifyai.requests:GET /etsy/connection-status 200 18.58ms
+INFO:listifyai.requests:GET /settings 200 20.15ms
+INFO:listifyai.requests:GET /analytics/usage 200 25.65ms
+INFO:listifyai.requests:GET /credits/history 200 18.64ms
+INFO:listifyai.requests:GET /credits/balance 200 30.64ms
+INFO:listifyai.requests:GET /credits/history 200 20.26ms
+INFO:listifyai.requests:GET /credits/balance 200 17.04ms
+INFO:listifyai.requests:GET /auth/me 200 21.72ms
+INFO:listifyai.requests:GET /etsy/connect 200 8.51ms
+INFO:listifyai.requests:GET /openapi.json 200 213.88ms
+INFO:listifyai.requests:GET /etsy/connection-status 401 5.38ms
+INFO:listifyai.requests:POST /auth/register 201 655.28ms
+INFO:listifyai.requests:GET /etsy/connection-status 200 6.36ms
+INFO:listifyai.requests:POST /etsy/disconnect 200 5.49ms
+INFO:listifyai.requests:DELETE /auth/account 200 11.66ms
+INFO:listifyai.requests:GET /auth/me 401 5.49ms
+INFO:listifyai.requests:GET /health 200 2.96ms
+INFO:listifyai.requests:GET /health 200 2.23ms
+INFO:listifyai.requests:GET /docs 200 1.00ms

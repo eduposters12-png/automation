@@ -1,0 +1,326 @@
+LISTIFYAI PROJECT AUDIT REPORT V2
+Generated on 2026-05-26
+
+Runtime summary:
+- Backend dependencies: installed/satisfied from backend/requirements.txt.
+- Alembic: upgraded successfully to head; backend/listifyai.db alembic_version is 202605280009.
+- Backend: running at http://localhost:8000 with GET /health returning {"status":"ok"} and /docs returning HTTP 200.
+- Frontend: running at http://localhost:3000 from npm run dev -- --port 3000; root page returns HTTP 200.
+- Verification commands: npm run lint passed with warnings only; python -m compileall app alembic passed.
+- Startup fix applied during this audit: alembic initially failed from backend/ with ModuleNotFoundError: No module named 'backend'. Fixed by inserting the project root into sys.path in backend/alembic/env.py:2-14 and backend/app/main.py:1-14 so the requested backend working directory works.
+
+Service status:
+| Service | Status | Note |
+|---|---|---|
+| Database | CONNECTED WITH WARNING | backend/.env:2 points to sqlite+aiosqlite:///./listifyai.db. The backend SQLite DB is connected and migrated to 202605280009, but PostgreSQL is NOT configured. |
+| Redis | IN-MEMORY FALLBACK | backend/.env:46 points to redis://localhost:6379, but Redis ping timed out. queue_service.py falls back to memory at backend/app/services/queue_service.py:47-55 and 149-166. |
+| Cloudinary | MISSING / PLACEHOLDER | backend/.env:31-33 are placeholder values. |
+| Stripe | MISSING / PLACEHOLDER | backend/.env:36-43 are placeholder values. |
+| OpenAI | MISSING / PLACEHOLDER | backend/.env:27 is a placeholder value. |
+| Gemini | MISSING / PLACEHOLDER | backend/.env:28 is a placeholder value. Gemini/Veo is also intentionally disabled in backend/app/services/video_service.py:41-43. |
+| Serper | MISSING / PLACEHOLDER | backend/.env:49 is a placeholder value. |
+
+Audit scope:
+I reviewed the application source files, backend source files, migrations, schemas, models, services, frontend pages/components/libs, README, SETUP, package files, and environment templates/current local env. Generated dependencies and runtime artifacts such as node_modules, .next, backend/venv, __pycache__, logs, and SQLite database files are not treated as application source.
+
+SECTION 1 - WHAT IS NEW SINCE LAST AUDIT
+
+New files found for phases 4-6 and related setup:
+- backend/app/models/credit_ledger.py: NEW. Adds CreditAction enum at lines 13-23 and CreditLedger model at lines 26-51 with user/action/delta/balance/reference/idempotency/metadata fields.
+- backend/app/services/credit_service.py: NEW. Adds credit costs, plan monthly credits, signup grants, deduction/refund/grant/reset/status logic at lines 13-333.
+- backend/app/api/credits.py: NEW. Adds GET /credits/balance at lines 14-19 and GET /credits/history at lines 22-45.
+- backend/alembic/versions/202605260007_credit_system.py: NEW. Adds credit_balance to users and creates credit_ledger table/indexes at lines 33-56.
+- components/InsufficientCreditsModal.tsx: NEW. Adds upgrade modal for structured INSUFFICIENT_CREDITS errors at lines 24-53.
+- components/CreditBalance.tsx: NEW. Fetches /credits/balance and renders a compact balance badge at lines 10-49. It exists but is not currently imported anywhere in app/components.
+- backend/alembic/versions/202605270008_multi_page_product.py: NEW. Adds six multi-page listing columns at lines 30-53.
+- backend/app/services/multi_page_service.py: NEW. Adds Claude page planning, image generation, Cloudinary image/PDF uploads, PDF compilation, and per-page credit deductions at lines 54-350.
+- app/(dashboard)/new-listing/multi-page/page.tsx: NEW. Adds the multi-page product UI flow at lines 44-279.
+- backend/alembic/versions/202605280009_billing_alerts.py: NEW. Adds credit_cycle_start, credit_cycle_end, last_credit_reset to users at lines 18-21.
+- backend/app/services/claude_balance_service.py: NEW. Adds cached Claude API key probing and credit-exhaustion detection at lines 18-132.
+- components/CreditAlertModal.tsx: NEW. Adds the four alert modal paths at lines 80-233.
+- components/CreditAlertWrapper.tsx: NEW. Wires useCreditStatus to CreditAlertModal at lines 8-25.
+- lib/useCreditStatus.ts: NEW. Polls /stripe/credit-status and maps non-ok alert_state values to modal state at lines 10-60.
+- backend/app/db/sqlite_compat.py: NEW since the previous report. Adds SQLite URL conversion and compilers for PostgreSQL UUID/JSONB under SQLite at lines 6-42.
+
+Existing files modified:
+- backend/app/models/user.py: adds credit_balance, credit_cycle_start, credit_cycle_end, last_credit_reset at lines 27-30.
+- backend/app/models/listing.py: adds is_multi_page, page_plan_json, page_images_json, pdf_url, total_pages_planned, pages_completed at lines 49-59.
+- backend/app/models/__init__.py: exports CreditAction and CreditLedger at lines 1 and 13-14.
+- backend/app/api/listings.py: adds credit deductions/refunds to image, regenerate, high-res, video, copy, upload, and bulk queue paths at lines 409-420, 459-471, 502-514, 574-592, 616-621, 737, and 832-848. Adds multi-page endpoints at lines 861-963.
+- backend/app/api/billing.py: adds credit_service and Claude balance imports at lines 16-17, checkout/session subscription helpers at lines 99-162, webhook plan/cycle/credit handling at lines 186-258, and GET /stripe/credit-status at lines 261-304.
+- backend/app/api/auth.py: adds grant_signup_credits import at line 13, _days_until_reset at lines 24-27, signup credit grant at line 63, and /auth/me days_until_reset injection at lines 94-96.
+- backend/app/schemas/auth.py: adds credit_balance and days_until_reset to UserOut at lines 25-26.
+- backend/app/schemas/listings.py: adds MultiPageCreateRequest at lines 47-49, pdf_url to ListingPackageResponse at line 98, and multi-page response schemas at lines 136-156.
+- backend/app/main.py: includes credits router at lines 14 and 63, and includes an import-path fix at lines 1-14.
+- backend/alembic/env.py: includes an import-path fix at lines 2-14 and still loads backend app metadata at lines 14-17.
+- backend/app/db/session.py: uses sqlite_sync_url and SQLite check_same_thread handling at lines 7 and 9-18.
+- backend/alembic.ini: currently points Alembic to sqlite+aiosqlite:///./listifyai.db at line 5 and prepends %(here)s/.. at line 3.
+- backend/app/services/queue_service.py: refunds Etsy upload credits on provider failures at lines 83-113 and falls back to memory queue if Redis is unavailable at lines 47-55 and 149-166.
+- backend/app/services/etsy_upload_service.py: uploads PDF files for digital products at lines 148-180 and includes pdf_url in upload payloads at lines 198-210.
+- backend/app/services/stripe.py: maps monthly and annual Basic/Pro/Agency price IDs to plans at lines 5-36.
+- backend/requirements.txt: includes aiosqlite at line 9, Redis/RQ at lines 14 and 16, reportlab at line 15, and Pillow at line 21. psycopg is commented out at line 10.
+- app/(dashboard)/layout.tsx: imports and renders CreditAlertWrapper at lines 3 and 19.
+- components/Sidebar.tsx: adds Multi-Page Product nav at line 31, polls credit status at line 40, renders credit state badges at lines 60-108, and includes a modal for both_depleted at lines 180-188.
+- components/NewListingForm.tsx: uses useCreditStatus(false) at line 79, tracks insufficient credit state at line 97, handles INSUFFICIENT_CREDITS at lines 158-165, and displays costs in the image workflow at lines 425-428, 460-471, and 515-518.
+- app/(dashboard)/new-listing/page.tsx: adds the Multi-Page Digital Product entry card and link at lines 18-36.
+- app/(dashboard)/new-listing/package/page.tsx: handles insufficient credits at lines 183-189, 222-224, and 261-263; shows PDF download info at lines 434-454; renders InsufficientCreditsModal at lines 689-695.
+- app/(dashboard)/new-listing/upload/page.tsx: handles INSUFFICIENT_CREDITS during upload at lines 101-107 and renders InsufficientCreditsModal at lines 254-260.
+- app/(dashboard)/dashboard/page.tsx: fetches /credits/balance with dashboard data at lines 46-49 and renders Credits Remaining at lines 86-92.
+- app/(dashboard)/settings/page.tsx: fetches /credits/balance and /credits/history at lines 58-63 and renders credit history at lines 223-245.
+- app/(dashboard)/upgrade/page.tsx: adds plan credit counts at lines 15-18, exhausted-credit banner at lines 70-73, and reset messaging at lines 92-93.
+- components/ui/Modal.tsx: adds maxWidthClassName support at lines 14 and 17-24 for the alert modal sizes.
+- lib/api.ts: preserves structured API error detail/code at lines 23-34 and throws object-detail ApiError at lines 54-61.
+- lib/types.ts: adds credit fields to User at lines 8-9 and CreditBalance/CreditHistory/CreditStatus/CreditAlertState types at lines 79-116.
+- lib/plans.ts: adds credit labels for paid/free plans at lines 9, 17, 25, 33, and 37-42.
+
+Migration comparison:
+- Original migrations present: 202605250001_initial.py, 202605250002_trends_cache.py, 202605250003_listing_image_pipeline.py, 202605250004_listing_package_review.py, 202605250005_etsy_upload_queue.py, 202605250006_usage_launch_ready.py.
+- New migration 202605260007_credit_system.py: FOUND.
+- New migration 202605270008_multi_page_product.py: FOUND.
+- New migration 202605280009_billing_alerts.py: FOUND.
+- Missing named migrations: NONE.
+- Applied DB head in backend/listifyai.db: 202605280009.
+
+SECTION 2 - CREDIT SYSTEM STATUS
+
+credit_service.py:
+- EXISTS at backend/app/services/credit_service.py.
+- Functions found:
+  - get_balance at line 32.
+  - insufficient_credits_error at line 39.
+  - _deduct_credits_no_commit at line 52.
+  - deduct_credits at line 83.
+  - grant_credits at line 96.
+  - refund_credits at line 133.
+  - grant_signup_credits at line 162.
+  - grant_plan_credits at line 172.
+  - _as_utc at line 186.
+  - _user_plan_value at line 192.
+  - start_credit_cycle at line 196.
+  - check_and_reset_credits_if_due at line 208.
+  - reset_plan_credits at line 264.
+  - get_credit_status at line 301.
+- Credit constants found: CREDIT_COSTS at lines 13-20, PLAN_MONTHLY_CREDITS at lines 22-27, SIGNUP_CREDITS at line 29.
+
+CreditLedger model:
+- EXISTS at backend/app/models/credit_ledger.py:26-51.
+- Fields found:
+  - id at line 29.
+  - user_id at lines 30-35.
+  - action at line 36.
+  - credits_delta at line 37.
+  - balance_after at line 38.
+  - listing_id at lines 39-43.
+  - job_id at lines 44-48.
+  - idempotency_key at line 49.
+  - metadata_json at line 50.
+  - created_at at line 51.
+- CreditAction enum values found: IMAGE_GENERATION, IMAGE_REGENERATION, HIGH_RES_IMAGE, VIDEO_GENERATION, COPY_GENERATION, ETSY_LISTING_UPLOAD, MONTHLY_PLAN_GRANT, SIGNUP_GRANT, MANUAL_ADJUSTMENT, REFUND at backend/app/models/credit_ledger.py:13-23.
+
+users.credit_balance:
+- EXISTS in model at backend/app/models/user.py:27.
+- EXISTS in migration at backend/alembic/versions/202605260007_credit_system.py:35.
+- EXISTS in the migrated backend SQLite database.
+
+Credit deductions wired into listings.py:
+- POST /listings/generate-image deducts IMAGE_GENERATION or HIGH_RES_IMAGE at backend/app/api/listings.py:409-410 and refunds HTTPException failures at lines 419-421.
+- POST /listings/{listing_id}/regenerate-image deducts IMAGE_REGENERATION at lines 459-460 and refunds HTTPException failures at lines 470-472.
+- POST /listings/{listing_id}/set-high-res deducts HIGH_RES_IMAGE at lines 502-503 and refunds HTTPException failures at lines 513-515.
+- POST /listings/{listing_id}/generate-video deducts VIDEO_GENERATION at lines 574-575 and refunds generation/upload failures at lines 582-592.
+- POST /listings/{listing_id}/generate-copy deducts COPY_GENERATION at lines 616-617 and refunds CopyGenerationError at lines 620-625.
+- POST /listings/{listing_id}/upload deducts ETSY_LISTING_UPLOAD for auto uploads at line 737. Manual mode returns before deduction at lines 724-729.
+- POST /listings/bulk-queue checks total cost at lines 832-835 and deducts per listing without commit until all are staged at lines 837-848.
+- Multi-page per-page image generation deducts IMAGE_GENERATION inside backend/app/services/multi_page_service.py:304-318.
+- Missing/partial: POST /listings/create-multi-page and POST /listings/{id}/start-multi-page do not perform an upfront total credit reservation in listings.py. The multi-page service deducts one page at a time after the Claude plan is created.
+- EXISTS BUT BROKEN: COPY_GENERATION refund is missing for CopyJSONParseError. Deduction happens at backend/app/api/listings.py:616-617, but the CopyJSONParseError handler at lines 626-630 raises without refund.
+
+Credit endpoints:
+- /credits/balance: EXISTS at backend/app/api/credits.py:14-19.
+- /credits/history: EXISTS at backend/app/api/credits.py:22-45.
+- credits router is included in the FastAPI app at backend/app/main.py:63.
+
+Signup and plan credit grants:
+- Signup credit grant: IMPLEMENTED. auth.py imports grant_signup_credits at line 13 and calls it after user creation at line 63.
+- Plan credit grant in billing webhook: IMPLEMENTED AS RESET. billing.py calls start_credit_cycle and reset_plan_credits for checkout.session.completed at lines 202-208, subscription created/updated at lines 220-227, and invoice.payment_succeeded at lines 233-244.
+- Note: credit_service.grant_plan_credits exists at lines 172-183 but is not used by billing.py. The active webhook behavior resets balance to the plan amount via reset_plan_credits.
+
+SECTION 3 - BILLING ALERTS STATUS
+
+claude_balance_service.py:
+- EXISTS at backend/app/services/claude_balance_service.py.
+- Main functions found: _cache_key at line 18, _cached_result at line 25, _store_result at line 38, _error_payload at line 43, _probe_claude_key at line 60, check_claude_key_status at line 119.
+- It detects status ok, invalid_key, credits_exhausted, rate_limited, anthropic_outage, timeout, and unknown_error at lines 76-116.
+
+/stripe/credit-status:
+- EXISTS at backend/app/api/billing.py:261-304.
+- It combines software credit status from credit_service.get_credit_status at line 267 with Claude key status from check_claude_key_status at lines 269-277.
+- It returns alert_state values both_depleted, software_depleted, claude_depleted, software_low, and ok at lines 282-291.
+- Caveat: invalid_key is grouped with credits_exhausted as claude_exhausted at line 280, so an invalid Claude key can trigger the same alert path as depleted Claude credits.
+
+Credit cycle columns:
+- credit_cycle_start: EXISTS in model at backend/app/models/user.py:28 and migration at backend/alembic/versions/202605280009_billing_alerts.py:19.
+- credit_cycle_end: EXISTS in model at backend/app/models/user.py:29 and migration at backend/alembic/versions/202605280009_billing_alerts.py:20.
+- last_credit_reset: EXISTS in model at backend/app/models/user.py:30 and migration at backend/alembic/versions/202605280009_billing_alerts.py:21.
+- All three exist in the migrated backend SQLite users table.
+
+Credit reset function:
+- check_and_reset_credits_if_due: EXISTS at backend/app/services/credit_service.py:208-261.
+- It checks cycle end, avoids duplicate reset with last_credit_reset/idempotency, sets balance to plan monthly credits, advances cycle_start/cycle_end, and records a MONTHLY_PLAN_GRANT ledger entry.
+
+CreditAlertModal:
+- EXISTS at components/CreditAlertModal.tsx.
+- Four popup types found:
+  - software_low at lines 80-100.
+  - software_depleted at lines 103-129.
+  - claude_depleted at lines 132-177.
+  - both_depleted default branch at lines 180-233.
+
+CreditAlertWrapper in dashboard layout:
+- EXISTS at components/CreditAlertWrapper.tsx:8-25.
+- Added to app/(dashboard)/layout.tsx at lines 3 and 19.
+- Additional note: components/Sidebar.tsx also calls useCreditStatus(true) at line 40. This is functional, but it means dashboard pages can perform duplicate /stripe/credit-status requests.
+
+SECTION 4 - MULTI PAGE PRODUCT STATUS
+
+multi_page_service.py:
+- EXISTS at backend/app/services/multi_page_service.py.
+- Functions found:
+  - _load_pdf_dependencies at line 58.
+  - _cloudinary_signature at line 68.
+  - _call_claude at line 73.
+  - _parse_page_plan at line 110.
+  - plan_product_pages at line 123.
+  - _upload_image_to_cloudinary at line 146.
+  - generate_page_image at line 177.
+  - compile_pdf at line 184.
+  - upload_pdf_to_cloudinary at line 228.
+  - run_multi_page_generation at line 260.
+
+Six new listing columns:
+- is_multi_page: EXISTS in model at backend/app/models/listing.py:49 and migration at backend/alembic/versions/202605270008_multi_page_product.py:31-34.
+- page_plan_json: EXISTS in model at backend/app/models/listing.py:50 and migration at lines 35-38.
+- page_images_json: EXISTS in model at backend/app/models/listing.py:51-56 and migration at lines 39-47.
+- pdf_url: EXISTS in model at backend/app/models/listing.py:57 and migration at line 48.
+- total_pages_planned: EXISTS in model at backend/app/models/listing.py:58 and migration at line 49.
+- pages_completed: EXISTS in model at backend/app/models/listing.py:59 and migration at lines 50-53.
+- All six exist in the migrated backend SQLite listings table.
+
+Multi-page endpoints:
+- POST /listings/create-multi-page: EXISTS at backend/app/api/listings.py:861-886.
+- POST /listings/{listing_id}/start-multi-page: EXISTS at backend/app/api/listings.py:889-914.
+- GET /listings/{listing_id}/multi-page-status: EXISTS at backend/app/api/listings.py:917-946.
+- GET /listings/{listing_id}/page-plan: EXISTS at backend/app/api/listings.py:949-963.
+- NOT FOUND: approve/regenerate individual multi-page page endpoints. The service sets each generated page approved=True at backend/app/services/multi_page_service.py:322-327, and the status endpoint returns that flag at backend/app/api/listings.py:928-936.
+
+Frontend page:
+- /new-listing/multi-page: EXISTS at app/(dashboard)/new-listing/multi-page/page.tsx.
+- It creates a listing with /listings/create-multi-page at lines 103-110, starts generation with /listings/{id}/start-multi-page at lines 79-85, polls status at lines 62-72 and 132-139, and polls page plan at lines 74-77 and 141-148.
+- Entry point from /new-listing exists at app/(dashboard)/new-listing/page.tsx:18-36.
+- EXISTS BUT RISKY: start_multi_page_generation awaits the full run_multi_page_generation call in the request at backend/app/api/listings.py:909. Large multi-page jobs can keep the HTTP request open for a long time even though the UI also polls status.
+
+SECTION 5 - STRIPE AND PAYMENT STATUS
+
+Config:
+- STRIPE_SECRET_KEY: EXISTS in Settings at backend/app/core/config.py:29, but local backend/.env:36 is a placeholder.
+- STRIPE_WEBHOOK_SECRET: EXISTS in Settings at backend/app/core/config.py:30, but local backend/.env:37 is a placeholder.
+- STRIPE_BASIC_PRICE_ID: EXISTS at backend/app/core/config.py:31, local placeholder at backend/.env:38.
+- STRIPE_PRO_PRICE_ID: EXISTS at backend/app/core/config.py:32, local placeholder at backend/.env:39.
+- STRIPE_AGENCY_PRICE_ID: EXISTS at backend/app/core/config.py:33, local placeholder at backend/.env:40.
+- Annual price IDs also exist in Settings at backend/app/core/config.py:34-36, but local backend/.env:41-43 are placeholders.
+
+Plan price mapping:
+- Basic, Pro, Agency monthly price mapping exists at backend/app/services/stripe.py:15-19.
+- Basic, Pro, Agency annual fallback mapping exists at backend/app/services/stripe.py:7-14.
+- Reverse price-to-plan mapping exists at backend/app/services/stripe.py:22-36.
+
+Checkout:
+- POST /stripe/checkout exists at backend/app/api/billing.py:33-77.
+- It creates a Stripe customer if needed at lines 51-61 and creates a subscription Checkout session at lines 63-73.
+- Blocking in local env: placeholder Stripe keys/price IDs mean real checkout cannot succeed until backend/.env:36-43 are replaced.
+
+Webhook:
+- POST /stripe/webhook exists at backend/app/api/billing.py:165-258.
+- Signature verification uses STRIPE_WEBHOOK_SECRET at lines 172-181.
+- checkout.session.completed is processed at lines 186-208:
+  - user_id from metadata at line 187.
+  - subscription retrieval at line 193.
+  - plan/period detection at lines 194-195.
+  - customer/subscription saved at lines 196-197.
+  - plan saved at lines 198-201.
+  - credit cycle and plan credits set at lines 202-208.
+- Credit cycle is also set on customer.subscription.created/updated at lines 220-227 and invoice.payment_succeeded at lines 233-244.
+- customer.subscription.deleted clears plan, subscription id, credit_cycle_start, credit_cycle_end, and credit_balance at lines 246-256.
+- EXISTS BUT PARTIAL: direct POST /stripe/cancel sets plan FREE and stripe_subscription_id None at backend/app/api/billing.py:80-95, but it does not clear credit_cycle_start, credit_cycle_end, last_credit_reset, or credit_balance. The webhook deletion path does clear most of those fields.
+
+SECTION 6 - WHAT IS STILL BROKEN OR MISSING
+
+1. backend/.env - Missing real production/test secrets
+- What is missing or broken: JWT_SECRET and ENCRYPTION_KEY are placeholders at backend/.env:12-13; Etsy client id is placeholder at line 22; OpenAI/Gemini are placeholders at lines 27-28; Cloudinary keys are placeholders at lines 31-33; Stripe keys and price IDs are placeholders at lines 36-43; Serper is placeholder at line 49.
+- Criticality: BLOCKING for real AI generation, image/video/PDF upload, Stripe checkout/webhooks, trend search, Etsy OAuth, and safe auth/encryption. Non-blocking only for basic local page/server startup.
+
+2. PostgreSQL connection - NOT FOUND in active runtime
+- What is missing or broken: backend/.env:2 uses SQLite. PostgreSQL URL is commented out at backend/.env:9. README.md:9 and README.md:44 still describe PostgreSQL as the database. psycopg is commented out in backend/requirements.txt:10.
+- Criticality: BLOCKING if the requirement is PostgreSQL. Non-blocking for current local run because SQLite is connected and migrated.
+
+3. Redis - unavailable
+- What is missing or broken: Redis ping to redis://localhost:6379 timed out. queue_service.py returns None on ping failure at backend/app/services/queue_service.py:47-55 and uses in-memory jobs at lines 149-166.
+- Criticality: NON-BLOCKING locally, but BLOCKING for reliable background uploads in production because memory jobs vanish on process restart.
+
+4. backend/app/api/listings.py - Copy JSON parse errors consume credits
+- What is missing or broken: COPY_GENERATION credits are deducted at backend/app/api/listings.py:616-617. CopyGenerationError refunds at lines 620-625. CopyJSONParseError at lines 626-630 raises without refunding.
+- Criticality: BLOCKING for credit correctness/fairness when Claude returns malformed copy JSON.
+
+5. backend/app/api/listings.py and backend/app/services/multi_page_service.py - Multi-page credit reservation is partial
+- What is missing or broken: create/start endpoints do not pre-check total planned credit cost. Credits are deducted page by page at backend/app/services/multi_page_service.py:304-318 after Claude chooses page count.
+- Criticality: NON-BLOCKING for MVP, but product-risky because users can get a partially generated failed product if credits run out mid-run.
+
+6. backend/app/api/listings.py - Multi-page generation runs inside the HTTP request
+- What is missing or broken: start_multi_page_generation awaits run_multi_page_generation directly at backend/app/api/listings.py:909.
+- Criticality: BLOCKING/RISKY for large products because 10-30 page generation can exceed browser/proxy/server request timeouts.
+
+7. Multi-page page approval/regeneration - NOT FOUND
+- What is missing or broken: No endpoint found for approving, rejecting, or regenerating individual multi-page pages. Generated pages are stored with approved=True at backend/app/services/multi_page_service.py:322-327.
+- Criticality: NON-BLOCKING for first version, but important for product quality control.
+
+8. components/CreditBalance.tsx - EXISTS BUT UNUSED
+- What is missing or broken: Component exists at components/CreditBalance.tsx:10-49, but no import/render use was found outside its own file. Dashboard/settings render credit balances directly.
+- Criticality: NON-BLOCKING cleanup issue.
+
+9. components/Sidebar.tsx and app/(dashboard)/layout.tsx - duplicate credit status polling
+- What is missing or broken: Sidebar calls useCreditStatus(true) at components/Sidebar.tsx:40 and CreditAlertWrapper also calls useCreditStatus(true) at components/CreditAlertWrapper.tsx:9, which is rendered globally in app/(dashboard)/layout.tsx:19.
+- Criticality: NON-BLOCKING, but creates duplicate /stripe/credit-status requests per dashboard load.
+
+10. backend/app/services/video_service.py - Gemini/Veo stub is disabled
+- What is missing or broken: _generate_with_gemini returns None even when GEMINI_API_KEY is set, by design, at backend/app/services/video_service.py:41-43.
+- Criticality: NON-BLOCKING if local ffmpeg slideshow video is acceptable; BLOCKING if Gemini/Veo video generation is expected.
+
+11. Frontend image rendering warnings
+- What is missing or broken: npm run lint passed but warned about raw <img> usage in app/(dashboard)/new-listing/multi-page/page.tsx:254, app/(dashboard)/new-listing/package/page.tsx:389, and components/NewListingForm.tsx:452, 498, 538.
+- Criticality: NON-BLOCKING performance warning.
+
+12. Sentry Next.js server setup warning
+- What is missing or broken: frontend startup logs warn that sentry.server.config.ts should be moved into a Next.js instrumentation hook/register() flow.
+- Criticality: NON-BLOCKING for local startup; production observability may be incomplete.
+
+SECTION 7 - OVERALL HEALTH SCORE
+
+Authentication: 8/10
+- Cookie/JWT auth, protected dependency, signup, login, /auth/me, profile, password, and soft delete exist. Signup credits are integrated. Score is reduced because local JWT/encryption values are placeholders and there are no automated auth tests found.
+
+Payment/Stripe: 5/10
+- Checkout, webhook verification, plan mapping, subscription events, invoice handling, and credit reset logic exist. Score is reduced because local Stripe keys/price IDs are placeholders and direct cancel does not clear the full credit cycle state.
+
+Credit system: 7/10
+- Ledger, balance, history, signup credits, plan resets, endpoint deductions, insufficient-credit errors, and frontend modals exist. Score is reduced for the copy parse refund bug, multi-page partial reservation, duplicate polling, and unused CreditBalance component.
+
+AI pipeline: 4/10
+- Claude, OpenAI image generation, Cloudinary upload, Serper trends, local video, and multi-page PDF pipeline code exist. Score is reduced heavily because local OpenAI/Cloudinary/Serper/Gemini keys are placeholders and Gemini/Veo is a disabled stub.
+
+Etsy integration: 6/10
+- OAuth, token refresh, listing upload, image/video/PDF file upload, publish flow, and queueing exist. Score is reduced because Etsy credentials are placeholders, Redis is unavailable, and production upload reliability depends on external setup.
+
+Frontend completeness: 7/10
+- Dashboard, settings, upgrade, listing workflow, credit modals, multi-page page, upload flow, and lint-passing UI are present. Score is reduced for raw img warnings, duplicate credit status polling, unused CreditBalance, and missing individual multi-page page approval/regeneration.
+
+Overall: 6/10
+- The app runs locally with backend and frontend connected, migrations applied, and the new credit/billing/multi-page code present. It is not production-ready because key external services are placeholders, PostgreSQL is not active, Redis is unavailable, and a few credit/multi-page edge cases need fixes.

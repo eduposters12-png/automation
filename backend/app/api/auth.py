@@ -15,6 +15,18 @@ from backend.app.services.credit_service import grant_signup_credits
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
+def _as_utc(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
+def _days_until_reset(user: User) -> int | None:
+    if not user.credit_cycle_end:
+        return None
+    return max(0, (_as_utc(user.credit_cycle_end) - datetime.now(timezone.utc)).days)
+
+
 def _set_auth_cookie(response: Response, user: User) -> None:
     settings = get_settings()
     max_age = settings.access_token_expire_minutes * 60
@@ -79,7 +91,10 @@ def logout(response: Response) -> dict[str, bool]:
 
 @router.get("/me", response_model=AuthResponse)
 def me(current_user: User = Depends(get_current_user)) -> AuthResponse:
-    return AuthResponse(user=UserOut.model_validate(current_user))
+    user_out = UserOut.model_validate(current_user).model_copy(
+        update={"days_until_reset": _days_until_reset(current_user)}
+    )
+    return AuthResponse(user=user_out)
 
 
 @router.patch("/profile", response_model=AuthResponse)

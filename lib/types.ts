@@ -6,6 +6,7 @@ export type User = {
   name: string;
   plan: Plan;
   credit_balance: number;
+  days_until_reset: number | null;
   created_at: string;
 };
 
@@ -86,6 +87,32 @@ export interface CreditHistoryEntry {
   balance_after: number;
   created_at: string;
   listing_id: string | null;
+}
+
+export interface CreditStatus {
+  alert_state: "ok" | "software_low" | "software_depleted" | "claude_depleted" | "both_depleted";
+  software_credits: {
+    balance: number;
+    plan_total: number;
+    percent_remaining: number;
+    depleted: boolean;
+    low: boolean;
+    days_until_reset: number | null;
+    reset_at: string | null;
+  };
+  claude: {
+    working: boolean;
+    status: string;
+    message: string;
+  };
+  plan: string;
+  cycle_end: string | null;
+  days_until_reset: number | null;
+}
+
+export interface CreditAlertState {
+  show: boolean;
+  type: "software_low" | "software_depleted" | "claude_depleted" | "both_depleted" | null;
 }
 
 export type TestConnectionResponse = {
@@ -234,3 +261,11 @@ export type Job = {
   created_at: string;
   updated_at: string;
 };
+
+export interface EtsyConnectionStatus {
+  connected: boolean;
+  shop_name: string | null;
+  shop_url: string | null;
+  etsy_shop_id: string | null;
+  connected_at: string | null;
+}

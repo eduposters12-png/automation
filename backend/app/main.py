@@ -1,6 +1,15 @@
+from pathlib import Path
+import sys
+
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+
+project_root = Path(__file__).resolve().parents[2]
+project_root_string = str(project_root)
+
+if project_root_string not in sys.path:
+    sys.path.insert(0, project_root_string)
 
 from backend.app.api import analytics, auth, billing, credits, dashboard, etsy, jobs, listings, onboarding, settings, shop
 from backend.app.core.config import get_settings

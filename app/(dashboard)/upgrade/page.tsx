@@ -2,6 +2,7 @@
 
 import * as Sentry from "@sentry/nextjs";
 import { CheckCircle2 } from "lucide-react";
+import { useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
 
@@ -9,19 +10,20 @@ import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { apiFetch } from "@/lib/api";
-import { planCredits } from "@/lib/plans";
 import type { AuthResponse, Plan } from "@/lib/types";
 
 const plans = [
-  { id: "BASIC" as const, name: "Basic", price: 19, features: [planCredits.BASIC, "20 images/month", "20 uploads/month", "Single shop"] },
-  { id: "PRO" as const, name: "Pro", price: 49, features: [planCredits.PRO, "100 images/month", "50 videos/month", "100 uploads/month"] },
-  { id: "AGENCY" as const, name: "Agency", price: 99, features: [planCredits.AGENCY, "500 images/month", "200 videos/month", "500 uploads/month"] }
+  { id: "BASIC" as const, name: "Basic", price: 19, credits: "150 credits/month", features: ["20 images/month", "20 uploads/month", "Single shop"] },
+  { id: "PRO" as const, name: "Pro", price: 49, credits: "600 credits/month", features: ["100 images/month", "50 videos/month", "100 uploads/month"] },
+  { id: "AGENCY" as const, name: "Agency", price: 99, credits: "2,000 credits/month", features: ["500 images/month", "200 videos/month", "500 uploads/month"] }
 ];
 
 export default function UpgradePage() {
+  const searchParams = useSearchParams();
   const [currentPlan, setCurrentPlan] = useState<Plan>("FREE");
   const [annual, setAnnual] = useState(false);
   const [loadingPlan, setLoadingPlan] = useState<string | null>(null);
+  const showCreditsBanner = searchParams.get("reason") === "credits_depleted";
 
   useEffect(() => {
     async function loadPlan() {
@@ -65,6 +67,12 @@ export default function UpgradePage() {
         </label>
       </div>
 
+      {showCreditsBanner ? (
+        <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-800">
+          Your credits are exhausted. Upgrade to get new credits immediately and continue creating listings.
+        </div>
+      ) : null}
+
       <div className="grid gap-5 lg:grid-cols-3">
         {plans.map((plan) => {
           const price = annual ? Math.round(plan.price * 0.8) : plan.price;
@@ -80,6 +88,10 @@ export default function UpgradePage() {
                 <span className="pb-1 text-sm font-medium text-gray-500">/mo</span>
               </div>
               {annual ? <p className="mt-1 text-sm font-semibold text-emerald-700">20% annual discount</p> : null}
+              <div className="mt-3">
+                <p className="text-sm font-bold text-gray-950">{plan.credits}</p>
+                <p className="mt-1 text-xs font-medium text-gray-500">Credits reset every 30 days</p>
+              </div>
               <div className="mt-6 space-y-3 text-sm text-gray-700">
                 {plan.features.map((feature) => (
                   <div key={feature} className="flex items-center gap-2">
