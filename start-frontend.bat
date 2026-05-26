@@ -1,0 +1,3 @@
+@echo off
+echo Starting ListifyAI Frontend...
+npm run dev
