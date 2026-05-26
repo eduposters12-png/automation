@@ -6,7 +6,9 @@ import {
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
+  Download,
   DollarSign,
+  FileText,
   Film,
   Loader2,
   Plus,
@@ -23,7 +25,8 @@ import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Modal } from "@/components/ui/Modal";
-import { apiFetch } from "@/lib/api";
+import { InsufficientCreditsModal } from "@/components/InsufficientCreditsModal";
+import { ApiError, apiFetch } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import type {
   AuthResponse,
@@ -76,6 +79,7 @@ function ListingPackageContent() {
   const [savingField, setSavingField] = useState<CopyField | null>(null);
   const [saveErrors, setSaveErrors] = useState<Record<string, string>>({});
   const [upgradeModalOpen, setUpgradeModalOpen] = useState(false);
+  const [insufficientCredits, setInsufficientCredits] = useState<{ required: number; balance: number; action: string } | null>(null);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [tags, setTags] = useState<string[]>([]);
@@ -176,6 +180,14 @@ function ListingPackageContent() {
     setImageIndex((current) => (images.length ? (current + 1) % images.length : 0));
   }
 
+  function showInsufficientCredits(error: ApiError) {
+    setInsufficientCredits({
+      required: Number(error.detail?.required || 0),
+      balance: Number(error.detail?.balance || 0),
+      action: String(error.detail?.action || "")
+    });
+  }
+
   async function generateVideo() {
     if (!listingId) return;
     if (plan && !canUseVideo(plan)) {
@@ -205,6 +217,10 @@ function ListingPackageContent() {
       }
       if (error instanceof Error && error.name === "AbortError") {
         toast.error("Video generation is taking longer than expected. Please try again.");
+        return;
+      }
+      if (error instanceof ApiError && error.code === "INSUFFICIENT_CREDITS") {
+        showInsufficientCredits(error);
         return;
       }
       const message = error instanceof Error ? error.message : "Video generation failed. Please try again.";
@@ -241,7 +257,11 @@ function ListingPackageContent() {
         status: "COPY_READY"
       } : current);
       toast.success("Copy generated");
-    } catch {
+    } catch (error) {
+      if (error instanceof ApiError && error.code === "INSUFFICIENT_CREDITS") {
+        showInsufficientCredits(error);
+        return;
+      }
       toast.error("Copy generation failed. Check your Claude API key in settings.");
     } finally {
       setCopyLoading(false);
@@ -411,6 +431,29 @@ function ListingPackageContent() {
             ) : null}
           </Card>
 
+          {listingPackage?.pdf_url ? (
+            <Card className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-md bg-indigo-50 text-primary">
+                  <FileText className="h-5 w-5" aria-hidden="true" />
+                </div>
+                <div>
+                  <h2 className="text-base font-semibold text-gray-950">Digital PDF</h2>
+                  <p className="mt-1 text-sm text-gray-500">This file will be uploaded as the Etsy digital download.</p>
+                </div>
+              </div>
+              <a
+                href={listingPackage.pdf_url}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex min-h-10 items-center justify-center gap-2 rounded-md border border-gray-200 bg-white px-4 text-sm font-semibold text-gray-900 transition hover:bg-gray-50"
+              >
+                <Download className="h-4 w-4" aria-hidden="true" />
+                Download PDF
+              </a>
+            </Card>
+          ) : null}
+
           <Card>
             <div className="mb-4 flex items-center justify-between gap-3">
               <h2 className="text-base font-semibold text-gray-950">Listing Video</h2>
@@ -443,9 +486,12 @@ function ListingPackageContent() {
                     <p className="text-sm text-gray-500">Creating your video package...</p>
                   </div>
                 ) : (
-                  <Button type="button" onClick={generateVideo} icon={<Film className="h-4 w-4" />}>
-                    Generate Video
-                  </Button>
+                  <div className="flex flex-wrap items-center gap-3">
+                    <Button type="button" onClick={generateVideo} icon={<Film className="h-4 w-4" />}>
+                      Generate Video
+                    </Button>
+                    <span className="text-sm font-medium text-gray-500">(costs 10 credits)</span>
+                  </div>
                 )}
               </div>
             ) : (
@@ -500,6 +546,7 @@ function ListingPackageContent() {
               >
                 {copyReady ? "Regenerate Copy" : "Generate Copy"}
               </Button>
+              <span className="self-center text-sm font-medium text-gray-500">(costs 2 credits)</span>
             </div>
           </div>
           {copyLoading ? (
@@ -639,6 +686,13 @@ function ListingPackageContent() {
           </Button>
         </div>
       </Modal>
+      <InsufficientCreditsModal
+        isOpen={Boolean(insufficientCredits)}
+        onClose={() => setInsufficientCredits(null)}
+        required={insufficientCredits?.required || 0}
+        balance={insufficientCredits?.balance || 0}
+        action={insufficientCredits?.action || ""}
+      />
     </div>
   );
 }

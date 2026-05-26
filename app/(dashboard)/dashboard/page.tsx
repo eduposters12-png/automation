@@ -1,7 +1,7 @@
 "use client";
 
 import * as Sentry from "@sentry/nextjs";
-import { BarChart3, ListChecks, PlusCircle, Sparkles, Store } from "lucide-react";
+import { BarChart3, Coins, ListChecks, PlusCircle, Sparkles, Store } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { Suspense, useEffect, useState, type ReactNode } from "react";
@@ -15,7 +15,7 @@ import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Modal } from "@/components/ui/Modal";
 import { apiFetch } from "@/lib/api";
-import type { AnalyticsDashboard } from "@/lib/types";
+import type { AnalyticsDashboard, CreditBalance } from "@/lib/types";
 
 const tips = [
   "Use exact buyer keywords in the first half of your title.",
@@ -35,6 +35,7 @@ function DashboardContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [data, setData] = useState<AnalyticsDashboard | null>(null);
+  const [credits, setCredits] = useState<CreditBalance | null>(null);
   const [loading, setLoading] = useState(true);
   const [tipsOpen, setTipsOpen] = useState(false);
   const [welcomeOpen, setWelcomeOpen] = useState(searchParams.get("welcome") === "true");
@@ -42,8 +43,12 @@ function DashboardContent() {
   useEffect(() => {
     async function loadDashboard() {
       try {
-        const response = await apiFetch<AnalyticsDashboard>("/analytics/dashboard");
-        setData(response);
+        const [dashboardResponse, creditResponse] = await Promise.all([
+          apiFetch<AnalyticsDashboard>("/analytics/dashboard"),
+          apiFetch<CreditBalance>("/credits/balance")
+        ]);
+        setData(dashboardResponse);
+        setCredits(creditResponse);
       } catch (error) {
         Sentry.captureException(error);
         toast.error("Could not load dashboard");
@@ -72,9 +77,23 @@ function DashboardContent() {
         <Badge tone="indigo">{data.plan}</Badge>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-4">
+      <div className="grid gap-4 lg:grid-cols-5">
         <StatCard label="Total Listings Created" value={data.total_listings} icon={<ListChecks className="h-6 w-6" />} />
         <StatCard label="Listings Live on Etsy" value={data.live_listings} icon={<Store className="h-6 w-6" />} />
+        <Card>
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-sm font-medium text-gray-500">Credits Remaining</p>
+              <p className="mt-2 text-3xl font-bold text-gray-950">{credits?.credit_balance ?? 0}</p>
+              {credits && credits.credit_balance === 0 ? (
+                <Link href="/upgrade" className="mt-2 block text-xs font-semibold text-red-600">No credits - upgrade to continue</Link>
+              ) : credits && credits.credit_balance < 20 ? (
+                <Link href="/upgrade" className="mt-2 block text-xs font-semibold text-amber-600">Running low - consider upgrading</Link>
+              ) : null}
+            </div>
+            <div className="text-primary"><Coins className="h-6 w-6" /></div>
+          </div>
+        </Card>
         <Card>
           <UsageBar label="Images" used={imageUsage.used} limit={imageUsage.limit} />
         </Card>
@@ -174,8 +193,8 @@ function DashboardContent() {
 
 function DashboardLoading() {
   return (
-    <div className="grid gap-4 lg:grid-cols-4">
-      {[1, 2, 3, 4].map((item) => <Card key={item} className="h-28 animate-pulse bg-gray-100" />)}
+    <div className="grid gap-4 lg:grid-cols-5">
+      {[1, 2, 3, 4, 5].map((item) => <Card key={item} className="h-28 animate-pulse bg-gray-100" />)}
     </div>
   );
 }

@@ -1,3 +1,4 @@
+from backend.app.models.credit_ledger import CreditAction, CreditLedger
 from backend.app.models.job import Job, JobStatus, JobType
 from backend.app.models.listing import Listing, ListingStatus
 from backend.app.models.shop import Shop
@@ -9,6 +10,8 @@ __all__ = [
     "Job",
     "JobStatus",
     "JobType",
+    "CreditAction",
+    "CreditLedger",
     "Listing",
     "ListingStatus",
     "Plan",

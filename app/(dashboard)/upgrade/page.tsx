@@ -9,12 +9,13 @@ import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { apiFetch } from "@/lib/api";
+import { planCredits } from "@/lib/plans";
 import type { AuthResponse, Plan } from "@/lib/types";
 
 const plans = [
-  { id: "BASIC" as const, name: "Basic", price: 19, features: ["20 images/month", "20 uploads/month", "Single shop"] },
-  { id: "PRO" as const, name: "Pro", price: 49, features: ["100 images/month", "50 videos/month", "100 uploads/month"] },
-  { id: "AGENCY" as const, name: "Agency", price: 99, features: ["500 images/month", "200 videos/month", "500 uploads/month"] }
+  { id: "BASIC" as const, name: "Basic", price: 19, features: [planCredits.BASIC, "20 images/month", "20 uploads/month", "Single shop"] },
+  { id: "PRO" as const, name: "Pro", price: 49, features: [planCredits.PRO, "100 images/month", "50 videos/month", "100 uploads/month"] },
+  { id: "AGENCY" as const, name: "Agency", price: 99, features: [planCredits.AGENCY, "500 images/month", "200 videos/month", "500 uploads/month"] }
 ];
 
 export default function UpgradePage() {

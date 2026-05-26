@@ -1,13 +1,20 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
-from backend.app.api import analytics, auth, billing, dashboard, etsy, jobs, listings, onboarding, settings, shop
+from backend.app.api import analytics, auth, billing, credits, dashboard, etsy, jobs, listings, onboarding, settings, shop
 from backend.app.core.config import get_settings
 from backend.app.middleware.rate_limit import configure_rate_limit
 from backend.app.middleware.request_logging import configure_request_logging
 from backend.app.middleware.security import configure_security_middleware
 
 settings_obj = get_settings()
+frontend_origin = str(settings_obj.frontend_url).rstrip("/")
+allowed_origins = {
+    frontend_origin,
+    frontend_origin.replace("localhost", "127.0.0.1"),
+    frontend_origin.replace("127.0.0.1", "localhost")
+}
 
 app = FastAPI(
     title="ListifyAI API",
@@ -18,7 +25,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[str(settings_obj.frontend_url).rstrip("/")],
+    allow_origins=sorted(allowed_origins),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"]
@@ -26,6 +33,12 @@ app.add_middleware(
 configure_security_middleware(app)
 configure_request_logging(app)
 configure_rate_limit(app)
+
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:
+    return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail}, headers=exc.headers)
+
 
 app.include_router(auth.router)
 app.include_router(etsy.router)
@@ -38,6 +51,7 @@ app.include_router(listings.router)
 app.include_router(shop.router)
 app.include_router(analytics.router)
 app.include_router(analytics.shop_router)
+app.include_router(credits.router)
 
 
 @app.get("/health")

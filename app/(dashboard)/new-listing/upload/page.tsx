@@ -8,7 +8,8 @@ import toast from "react-hot-toast";
 
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
-import { apiFetch } from "@/lib/api";
+import { InsufficientCreditsModal } from "@/components/InsufficientCreditsModal";
+import { ApiError, apiFetch } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import type { ListingStatusResponse, ListingUploadResponse } from "@/lib/types";
 
@@ -42,6 +43,7 @@ function UploadContent() {
   const [manualLoading, setManualLoading] = useState(false);
   const [status, setStatus] = useState<ListingStatusResponse | null>(null);
   const [activeStep, setActiveStep] = useState(0);
+  const [insufficientCredits, setInsufficientCredits] = useState<{ required: number; balance: number; action: string } | null>(null);
 
   const isLive = status?.status === "LIVE";
   const isFailed = status?.status === "FAILED";
@@ -96,6 +98,14 @@ function UploadContent() {
       await pollStatus();
     } catch (error) {
       setUploading(false);
+      if (error instanceof ApiError && error.code === "INSUFFICIENT_CREDITS") {
+        setInsufficientCredits({
+          required: Number(error.detail?.required || 0),
+          balance: Number(error.detail?.balance || 0),
+          action: String(error.detail?.action || "")
+        });
+        return;
+      }
       toast.error(error instanceof Error ? error.message : "Upload failed");
     }
   }
@@ -158,9 +168,12 @@ function UploadContent() {
             <span>I understand and accept the risks</span>
           </label>
 
-          <Button type="button" disabled={!accepted || uploading} onClick={uploadNow} icon={<Rocket className="h-4 w-4" />}>
-            Upload Now
-          </Button>
+          <div className="flex flex-wrap items-center gap-3">
+            <Button type="button" disabled={!accepted || uploading} onClick={uploadNow} icon={<Rocket className="h-4 w-4" />}>
+              Upload Now
+            </Button>
+            <span className="text-sm font-medium text-gray-500">(costs 3 credits per listing)</span>
+          </div>
         </Card>
 
         <Card className="space-y-5">
@@ -238,6 +251,13 @@ function UploadContent() {
           </Card>
         </div>
       ) : null}
+      <InsufficientCreditsModal
+        isOpen={Boolean(insufficientCredits)}
+        onClose={() => setInsufficientCredits(null)}
+        required={insufficientCredits?.required || 0}
+        balance={insufficientCredits?.balance || 0}
+        action={insufficientCredits?.action || ""}
+      />
     </div>
   );
 }

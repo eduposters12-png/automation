@@ -38,6 +38,7 @@ async def create_listing_zip(listing: dict[str, Any]) -> bytes:
     buffer = BytesIO()
     image_urls = listing.get("image_urls") or []
     video_url = listing.get("video_url")
+    pdf_url = listing.get("pdf_url")
 
     try:
         with ZipFile(buffer, "w", compression=ZIP_DEFLATED) as archive:
@@ -48,6 +49,9 @@ async def create_listing_zip(listing: dict[str, Any]) -> bytes:
             if video_url:
                 video_bytes = await _download_asset(str(video_url))
                 archive.writestr("video/listing-video.mp4", video_bytes)
+            if pdf_url:
+                pdf_bytes = await _download_asset(str(pdf_url))
+                archive.writestr("digital-product.pdf", pdf_bytes)
     except ZipCreationError:
         raise
     except Exception as exc:

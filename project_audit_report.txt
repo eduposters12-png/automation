@@ -1,0 +1,1542 @@
+PROJECT AUDIT REPORT FOR LISTIFYAI
+Generated on 2026-05-26
+
+Audit scope:
+I reviewed the application source, backend source, configuration files, frontend pages, shared libraries, schemas, models, services, migrations, and README in the working tree. I did not audit .git internal object storage because it is version-control metadata, not application source code.
+
+SECTION 1 - PROJECT OVERVIEW
+
+What the app does in simple terms:
+ListifyAI is a SaaS application for Etsy sellers. It lets a seller register, connect an Etsy shop through OAuth, store a Claude API key, analyze the shop with Claude plus trend search, generate Etsy product listing images with OpenAI image generation, review images with Claude, generate listing copy with Claude, optionally generate a simple listing video from images, and queue completed listings for manual or automatic Etsy upload.
+
+The product workflow is:
+1. User creates an account or logs in.
+2. User connects Etsy through OAuth.
+3. User adds a Claude API key.
+4. Backend fetches Etsy shop/listing/sales data and Serper trend data.
+5. Claude returns niche, style, strengths, opportunities, and product ideas.
+6. User picks or enters a product idea.
+7. Backend builds/refines an image prompt, calls OpenAI image generation, uploads the image to Cloudinary, and asks Claude to review the prompt/result concept.
+8. User approves images, generates copy, optionally generates a video, and uploads to Etsy or saves the package for manual review.
+
+Tech stack used:
+Frontend:
+Next.js 14 with App Router, React 18, TypeScript, Tailwind CSS, lucide-react icons, react-hot-toast, and Sentry for frontend error reporting. Key files are package.json:11-22, app/layout.tsx:1-32, tailwind.config.ts:1-26, sentry.client.config.ts:1-6, and sentry.server.config.ts:1-6.
+
+Backend:
+Python FastAPI, SQLAlchemy 2.0, Alembic, Pydantic Settings, python-jose JWT, passlib bcrypt, cryptography, httpx, Stripe SDK, SlowAPI rate limiting, Redis/RQ optional queueing, and ffmpeg-python for local video rendering. Key files are backend/requirements.txt:1-17, backend/app/main.py:1-45, backend/app/db/session.py:1-17, and backend/alembic/env.py:1-49.
+
+Database:
+PostgreSQL. SQLAlchemy models are in backend/app/models. Alembic migrations are in backend/alembic/versions.
+
+Third-party services:
+Etsy OAuth and Etsy Open API:
+OAuth helpers in backend/app/services/etsy.py and upload helpers in backend/app/services/etsy_upload_service.py.
+
+Anthropic Claude:
+Claude analysis, copy generation, image prompt refinement, image review, and Claude key testing are in backend/app/services/claude_service.py, backend/app/services/copy_service.py, backend/app/services/image_review_service.py, and backend/app/api/analytics.py.
+
+OpenAI:
+OpenAI GPT Image API is called in backend/app/services/image_service.py using model gpt-image-1.
+
+Serper:
+Google search/trend data is fetched in backend/app/services/trends_service.py.
+
+Cloudinary:
+Generated images and videos are uploaded through signed Cloudinary requests in backend/app/services/image_service.py and backend/app/services/video_service.py.
+
+Stripe:
+Subscription checkout, cancellation, and webhook handling are in backend/app/api/billing.py and backend/app/services/stripe.py.
+
+Redis/RQ:
+Optional upload queue backend in backend/app/services/queue_service.py. If Redis is unavailable, the code falls back to an in-memory queue.
+
+Sentry:
+Frontend only. The README explicitly says backend Sentry is not configured at README.md:154-159 and app frontend setup is in sentry.client.config.ts and sentry.server.config.ts.
+
+How frontend and backend communicate:
+The frontend communicates with the backend over REST HTTP using fetch. Browser-side calls go through lib/api.ts:18-44. The API base URL is process.env.NEXT_PUBLIC_API_URL with fallback http://localhost:8000 at lib/api.ts:1. Browser requests include credentials with credentials: "include" at lib/api.ts:20-23 so the HTTP-only auth cookie is sent.
+
+Next.js server components call backend APIs through lib/server-api.ts:13-24. That helper reads cookies from next/headers and forwards them as a Cookie header to FastAPI. The server helpers expose getCurrentUser, getDashboardStats, getOnboardingStatus, getSettings, getListings, and getJobs at lib/server-api.ts:26-47.
+
+Authentication method:
+Authentication is email/password with bcrypt password hashes and JWT access tokens. Password hashing and verification are in backend/app/core/security.py:17-23. JWT creation and decoding use HS256 in backend/app/core/security.py:25-38. The auth cookie is set in backend/app/api/auth.py:_set_auth_cookie at lines 17-32. The cookie name defaults to listify_session in backend/app/core/config.py:37. Cookie flags are httponly=True, samesite="lax", secure=settings.cookie_secure, and optional domain=settings.cookie_domain.
+
+Protected backend endpoints use get_current_user in backend/app/core/deps.py:25-51. That function accepts either the HTTP-only cookie or an Authorization: Bearer token. Cookie extraction and bearer fallback are in backend/app/core/deps.py:13-22.
+
+Payment method:
+Payments use Stripe Checkout subscriptions. The checkout endpoint is POST /stripe/checkout in backend/app/api/billing.py:28-72. It creates a Stripe customer if needed and creates a subscription checkout session with the selected plan price. Stripe webhooks are handled by POST /stripe/webhook in backend/app/api/billing.py:102-154. Stripe price IDs are mapped to plans in backend/app/services/stripe.py:5-36. Subscription cancellation is POST /stripe/cancel in backend/app/api/billing.py:75-91.
+
+SECTION 2 - FOLDER STRUCTURE
+
+Important folders:
+app: Next.js App Router frontend routes, layouts, loading screens, global CSS, global error UI, and not-found UI.
+app/(marketing): Public marketing landing page.
+app/(auth): Login and register pages.
+app/(dashboard): Authenticated dashboard routes, listing workflow pages, settings, onboarding, billing, shop analysis, and upload flows.
+components: Shared React UI and workflow components.
+components/ui: Small reusable UI primitives such as Button, Card, Badge, Input, and Modal.
+lib: Shared frontend TypeScript utilities, API clients, types, and plan display metadata.
+backend: Python backend package, requirements, Alembic config, and migrations.
+backend/app/api: FastAPI routers and endpoint handlers.
+backend/app/core: Backend settings, auth/security helpers, dependencies, and plan constants.
+backend/app/db: SQLAlchemy base and session creation.
+backend/app/middleware: Trusted host, request logging, and SlowAPI rate limiting middleware.
+backend/app/models: SQLAlchemy database models and enums.
+backend/app/schemas: Pydantic request and response schemas.
+backend/app/services: Integrations and business logic for AI, Etsy, Stripe, usage, queueing, Cloudinary, video, trends, and ZIP packaging.
+backend/app/workers: Placeholder worker boundary.
+backend/alembic: Alembic environment and migration scripts.
+backend/alembic/versions: Database schema migrations.
+
+Root files:
+.env.example: Frontend environment template with NEXT_PUBLIC_API_URL and NEXT_PUBLIC_SENTRY_DSN.
+backend/.env.example: Backend environment template for database, JWT, encryption, Etsy, AI keys, Cloudinary, Stripe, Redis, and Serper.
+.eslintrc.json: Next.js core web vitals ESLint config.
+.gitattributes: Git text normalization config.
+.gitignore: Ignores node_modules, Next build output, env files, Python caches, venvs, and local databases.
+package.json: Frontend package metadata, scripts, dependencies, and dev dependencies.
+README.md: Project setup, architecture, endpoint list, and security notes.
+next.config.mjs: Next.js config with Sentry wrapper and Cloudinary image remote pattern.
+next-env.d.ts: Next-generated TypeScript declarations.
+postcss.config.js: Tailwind and Autoprefixer PostCSS config.
+sentry.client.config.ts: Browser-side Sentry initialization.
+sentry.server.config.ts: Server-side Next Sentry initialization.
+tailwind.config.ts: Tailwind content paths, colors, font, and shadow config.
+tsconfig.json: TypeScript strict compiler config and @ alias.
+
+Frontend app files:
+app/layout.tsx: Root HTML layout, Inter font, global CSS, and toast container.
+app/globals.css: Tailwind imports, global base styles, and fade-in animation.
+app/global-error.tsx: Client global error boundary that reports to Sentry and offers reload.
+app/not-found.tsx: Custom not-found page linking to dashboard.
+app/(marketing)/page.tsx: Public landing page with features, pricing, FAQ, and links.
+app/(auth)/login/page.tsx: Login page shell using LoginForm.
+app/(auth)/register/page.tsx: Register page shell using RegisterForm.
+app/(dashboard)/layout.tsx: Authenticated layout that calls /auth/me and redirects unauthenticated users to /login.
+app/(dashboard)/dashboard/page.tsx: Dashboard UI that calls /analytics/dashboard and displays stats, usage, recent listings, shop health, and tips.
+app/(dashboard)/dashboard/loading.tsx: Skeleton cards while dashboard loads.
+app/(dashboard)/shop-analysis/page.tsx: Shop analysis UI that calls /shop/analysis and /shop/analyze and renders opportunities and product ideas.
+app/(dashboard)/shop-analysis/loading.tsx: Shop analysis skeleton.
+app/(dashboard)/new-listing/page.tsx: New listing route that passes query params into NewListingForm.
+app/(dashboard)/new-listing/package/page.tsx: Package review route for images, video, copy, bundle flag, and upload handoff.
+app/(dashboard)/new-listing/upload/page.tsx: Auto/manual upload route with Etsy risk disclaimer and status polling.
+app/(dashboard)/my-listings/page.tsx: Client listing management page with filtering, pagination, ZIP download, delete, and bulk upload handoff.
+app/(dashboard)/my-listings/loading.tsx: My listings skeleton.
+app/(dashboard)/listings/page.tsx: Server-rendered simpler listings table. It duplicates part of my-listings behavior.
+app/(dashboard)/bulk-listings/page.tsx: Bulk upload queue page for selected draft listings.
+app/(dashboard)/settings/page.tsx: Settings, usage, subscription, connection tests, profile, password, and account deletion UI.
+app/(dashboard)/upgrade/page.tsx: Plan selection and Stripe checkout UI.
+app/(dashboard)/onboarding/page.tsx: Onboarding page that loads onboarding status and renders OnboardingSteps.
+
+Component files:
+components/LoginForm.tsx: Client login form that posts to /auth/login.
+components/RegisterForm.tsx: Client register form that posts to /auth/register.
+components/Navbar.tsx: Public marketing navbar.
+components/Sidebar.tsx: Authenticated navigation sidebar and logout button.
+components/UsageBar.tsx: Visual monthly usage progress bar.
+components/UpgradeButton.tsx: Small checkout button posting to /stripe/checkout.
+components/EmptyStates.tsx: Reusable no-listings and no-analysis empty states.
+components/SettingsForm.tsx: Older/shared settings form component; current settings page uses its own UI instead.
+components/OnboardingSteps.tsx: Etsy connection, Claude key entry, and initial analysis flow.
+components/NewListingForm.tsx: Three-step image generation/review/multi-image workflow.
+components/ui/Badge.tsx: Small status badge component.
+components/ui/Button.tsx: Shared button with variants, loading spinner, and icon support.
+components/ui/Card.tsx: Shared bordered white card container.
+components/ui/Input.tsx: Labeled input with error text.
+components/ui/Modal.tsx: Shared modal with close button.
+
+Frontend lib files:
+lib/api.ts: Browser API helper, ApiError class, JSON/blob response parsing.
+lib/server-api.ts: Server-side API helper forwarding cookies.
+lib/plans.ts: Frontend display data for Basic, Pro, Agency plans.
+lib/types.ts: Shared TypeScript response and domain types.
+lib/utils.ts: cn helper wrapping clsx.
+
+Backend app files:
+backend/app/main.py: FastAPI app creation, middleware registration, router inclusion, and /health route.
+backend/app/core/config.py: Environment-backed Settings model.
+backend/app/core/deps.py: Auth token extraction and current-user dependency.
+backend/app/core/plans.py: Listing/shop limits and plan normalization.
+backend/app/core/security.py: Password hashing, JWT, AES-CBC encryption, and decryption.
+backend/app/db/base.py: SQLAlchemy declarative base.
+backend/app/db/session.py: Engine, SessionLocal, and get_db dependency.
+backend/app/middleware/rate_limit.py: SlowAPI 60/minute default rate limit setup.
+backend/app/middleware/request_logging.py: Request logging middleware.
+backend/app/middleware/security.py: TrustedHostMiddleware setup.
+backend/app/middleware/__init__.py: Empty middleware package marker.
+backend/app/workers/pipeline.py: Placeholder worker boundary that only marks a job pending.
+
+Backend API files:
+backend/app/api/auth.py: Registration, login, logout, current user, profile update, password change, soft account delete.
+backend/app/api/etsy.py: Etsy OAuth connect and callback.
+backend/app/api/onboarding.py: Onboarding status and Claude key save.
+backend/app/api/dashboard.py: Older dashboard stats endpoint.
+backend/app/api/settings.py: Settings read/update and Claude key last-four display.
+backend/app/api/billing.py: Stripe checkout, cancellation, and webhook handlers.
+backend/app/api/jobs.py: Durable job record endpoints for analysis, generation, and upload.
+backend/app/api/listings.py: Main listing lifecycle endpoints for images, video, copy, package review, upload, download, delete, and bulk queue.
+backend/app/api/shop.py: Shop analysis read and execute endpoints.
+backend/app/api/analytics.py: Analytics dashboard, usage, connection testing, and /health payload helper.
+backend/app/api/__init__.py: API package marker.
+
+Backend model files:
+backend/app/models/user.py: User table and Plan enum.
+backend/app/models/shop.py: Shop table with Etsy and Claude encrypted credentials.
+backend/app/models/listing.py: Listing table and listing lifecycle enum.
+backend/app/models/job.py: Job table plus job type/status enums.
+backend/app/models/trends_cache.py: Cached trend search data.
+backend/app/models/usage.py: Monthly usage count table and usage action enum.
+backend/app/models/__init__.py: Model exports.
+
+Backend schema files:
+backend/app/schemas/auth.py: Auth request/response schemas and profile/password schemas.
+backend/app/schemas/dashboard.py: DashboardStats response schema.
+backend/app/schemas/jobs.py: Job request/response and ListingOut schemas.
+backend/app/schemas/listings.py: Listing workflow request/response schemas.
+backend/app/schemas/onboarding.py: Claude key request and onboarding status schemas.
+backend/app/schemas/settings.py: Settings response/update schemas.
+backend/app/schemas/shop.py: Shop analysis response schema.
+backend/app/schemas/__init__.py: Schema package marker.
+
+Backend service files:
+backend/app/services/claude_service.py: Claude shop analysis prompt, call, JSON validation, and retry.
+backend/app/services/copy_service.py: Claude listing copy prompt, call, parsing, and retry.
+backend/app/services/image_review_service.py: Claude image prompt refinement and image review prompt/call logic.
+backend/app/services/image_service.py: Image prompt building, OpenAI image generation, and Cloudinary image upload.
+backend/app/services/video_service.py: Gemini boundary, ffmpeg slideshow generation, and Cloudinary video upload.
+backend/app/services/trends_service.py: Serper trend search, extraction, normalization, and caching.
+backend/app/services/etsy.py: Etsy OAuth PKCE, token exchange, token refresh, valid-token retrieval, and primary shop fetch.
+backend/app/services/etsy_service.py: Etsy shop/listing/receipt/transaction fetch for analysis.
+backend/app/services/etsy_upload_service.py: Etsy listing create, image/video upload, publish, and retry with token refresh.
+backend/app/services/queue_service.py: Redis/RQ or in-memory upload queue and retry processing.
+backend/app/services/shops.py: Primary shop lookup/create.
+backend/app/services/stripe.py: Stripe price ID to plan mapping.
+backend/app/services/usage_service.py: Monthly action-count usage tracking and plan-limit checks.
+backend/app/services/zip_service.py: ZIP package generation for listing assets and copy.
+backend/app/services/__init__.py: Service package marker.
+
+Migration files:
+backend/alembic.ini: Alembic config.
+backend/alembic/env.py: Alembic environment using backend settings and model metadata.
+backend/alembic/script.py.mako: Alembic migration template.
+backend/alembic/versions/202605250001_initial.py: Initial users, shops, listings, jobs schema and enums.
+backend/alembic/versions/202605250002_trends_cache.py: Adds trends_cache table.
+backend/alembic/versions/202605250003_listing_image_pipeline.py: Adds image_prompt, claude_review_json, primary_image_url and IMAGE_APPROVED enum value.
+backend/alembic/versions/202605250004_listing_package_review.py: Adds COPY_READY, READY_TO_UPLOAD enum values and is_bundle field.
+backend/alembic/versions/202605250005_etsy_upload_queue.py: Adds QUEUED, QUEUED_MANUAL, LIVE, FAILED enum values, shops.etsy_shop_id, and listings.error_message.
+backend/alembic/versions/202605250006_usage_launch_ready.py: Adds users.deleted_at and usage table.
+
+Most critical files:
+backend/app/main.py because it wires the backend app and routers.
+backend/app/core/deps.py because it protects endpoints.
+backend/app/core/security.py because it handles passwords, JWTs, and encryption.
+backend/app/core/config.py because it defines all required secrets and third-party keys.
+backend/app/models/*.py because they define the persisted domain model.
+backend/app/api/listings.py because it owns most user-facing paid actions.
+backend/app/api/shop.py because it runs shop analysis.
+backend/app/api/billing.py because it controls paid plans.
+backend/app/services/usage_service.py because it enforces current usage limits.
+backend/app/services/claude_service.py, copy_service.py, image_review_service.py, image_service.py, video_service.py, and etsy_upload_service.py because they perform expensive external work.
+lib/api.ts because all browser API error handling goes through it.
+components/NewListingForm.tsx and app/(dashboard)/new-listing/package/page.tsx because they are the main AI workflow UI.
+
+SECTION 3 - DATABASE MODELS
+
+Table: users
+Model file: backend/app/models/user.py:19-32
+Fields:
+id: UUID primary key, default uuid.uuid4.
+email: String(255), unique, indexed, required.
+name: String(160), required.
+password_hash: String(255), required.
+plan: Enum plan, default Plan.FREE, required.
+stripe_customer_id: String(255), unique, nullable.
+stripe_subscription_id: String(255), unique, nullable.
+created_at: DateTime(timezone=True), server default now.
+deleted_at: DateTime(timezone=True), nullable, used for soft delete.
+Relationships:
+User has many Shop records through User.shops. Relationship defined at backend/app/models/user.py:32. Shop.user_id cascades on delete.
+
+Table: shops
+Model file: backend/app/models/shop.py:11-35
+Fields:
+id: UUID primary key, default uuid.uuid4.
+user_id: UUID foreign key to users.id, on delete cascade, indexed, required.
+shop_url: String(500), nullable.
+shop_name: String(255), nullable.
+etsy_shop_id: String(255), indexed, nullable.
+niche: String(255), nullable.
+etsy_access_token_encrypted: Text, nullable.
+etsy_refresh_token_encrypted: Text, nullable.
+etsy_token_expires_at: DateTime(timezone=True), nullable.
+claude_api_key_encrypted: Text, nullable.
+analysis_json: JSONB, nullable.
+last_analyzed_at: DateTime(timezone=True), nullable.
+created_at: DateTime(timezone=True), server default now.
+Relationships:
+Shop belongs to User through Shop.user at backend/app/models/shop.py:33.
+Shop has many Listing records through Shop.listings at backend/app/models/shop.py:34.
+Shop has many Job records through Shop.jobs at backend/app/models/shop.py:35.
+
+Table: listings
+Model file: backend/app/models/listing.py:24-53
+Fields:
+id: UUID primary key, default uuid.uuid4.
+shop_id: UUID foreign key to shops.id, on delete cascade, indexed, required.
+status: Enum listing_status, default DRAFT, required.
+image_urls: JSONB list of strings, default empty list, required.
+image_prompt: Text, nullable.
+claude_review_json: JSONB, nullable.
+primary_image_url: String(1000), nullable.
+video_url: String(1000), nullable.
+title: String(140), nullable.
+description: Text, nullable.
+tags: JSONB list of strings, default empty list, required.
+price: Numeric(10, 2), nullable.
+is_bundle: Boolean, default false, required.
+etsy_listing_id: String(255), indexed, nullable.
+error_message: Text, nullable.
+created_at: DateTime(timezone=True), server default now.
+Relationships:
+Listing belongs to Shop through Listing.shop at backend/app/models/listing.py:53.
+
+Table: jobs
+Model file: backend/app/models/job.py:26-52
+Fields:
+id: UUID primary key, default uuid.uuid4.
+shop_id: UUID foreign key to shops.id, on delete cascade, indexed, required.
+type: Enum job_type, required.
+status: Enum job_status, default PENDING, required.
+payload_json: JSONB dict, default empty dict, required.
+result_json: JSONB dict, nullable.
+error_message: Text, nullable.
+created_at: DateTime(timezone=True), server default now.
+updated_at: DateTime(timezone=True), server default now, updated on change.
+Relationships:
+Job belongs to Shop through Job.shop at backend/app/models/job.py:52.
+
+Table: trends_cache
+Model file: backend/app/models/trends_cache.py:11-17
+Fields:
+id: UUID primary key, default uuid.uuid4.
+niche: String(255), unique, required.
+trends_json: JSONB list of strings, default empty list, required.
+cached_at: DateTime(timezone=True), server default now, required.
+Relationships:
+No explicit ORM relationships.
+
+Table: usage
+Model file: backend/app/models/usage.py:18-29
+Fields:
+id: UUID primary key, default uuid.uuid4.
+user_id: UUID foreign key to users.id, on delete cascade, indexed.
+action: Enum usage_action, required.
+count: Integer, default 0, required.
+month: String(7), required, format is YYYY-MM.
+updated_at: DateTime(timezone=True), server default now, updated on change.
+Constraints:
+UniqueConstraint on user_id, action, month named uq_usage_user_action_month at backend/app/models/usage.py:20-22.
+Relationships:
+No explicit ORM relationship back to User, but user_id references users.id.
+
+Enums:
+Plan enum in backend/app/models/user.py:12-16:
+FREE, BASIC, PRO, AGENCY.
+
+ListingStatus enum in backend/app/models/listing.py:13-21:
+DRAFT, QUEUED, QUEUED_MANUAL, IMAGE_APPROVED, COPY_READY, READY_TO_UPLOAD, LIVE, FAILED.
+
+JobType enum in backend/app/models/job.py:12-17:
+ANALYZE, GENERATE_IMAGE, GENERATE_VIDEO, UPLOAD_LISTING.
+
+JobStatus enum in backend/app/models/job.py:19-23:
+PENDING, RUNNING, DONE, FAILED.
+
+UsageAction enum in backend/app/models/usage.py:12-16:
+IMAGE_GENERATED, VIDEO_GENERATED, LISTING_UPLOADED.
+
+Other API-level enum-like values:
+ListingUploadRequest.mode in backend/app/schemas/listings.py:37-39 accepts auto or manual.
+TestConnectionRequest.key_type in backend/app/api/analytics.py:25-26 accepts etsy or claude.
+Claude analysis prompt requests product idea potential values High, Medium, or Low at backend/app/services/claude_service.py:36.
+
+SECTION 4 - ALL API ENDPOINTS
+
+Public/system endpoint:
+GET /health
+Defined in backend/app/main.py:43-45.
+What it does: Returns a simple health payload from analytics.health_payload.
+Inputs: No body, params, or auth headers.
+Returns: JSON with status and timestamp.
+Auth required: No.
+Plan restrictions: None.
+
+Auth endpoints:
+POST /auth/register
+Defined in backend/app/api/auth.py:35-51.
+What it does: Creates a new user, hashes password, sets auth cookie.
+Inputs: JSON body name, email, password. Password min 8 max 128 from backend/app/schemas/auth.py:9-12.
+Returns: AuthResponse with user object containing id, email, name, plan, created_at.
+Auth required: No.
+Plan restrictions: None. New users default to FREE.
+
+POST /auth/login
+Defined in backend/app/api/auth.py:54-61.
+What it does: Verifies email/password and sets auth cookie.
+Inputs: JSON body email, password.
+Returns: AuthResponse with user.
+Auth required: No.
+Plan restrictions: None.
+
+POST /auth/logout
+Defined in backend/app/api/auth.py:64-74.
+What it does: Deletes auth cookie.
+Inputs: No body required.
+Returns: {"ok": true}.
+Auth required: No explicit current-user dependency.
+Plan restrictions: None.
+
+GET /auth/me
+Defined in backend/app/api/auth.py:77-79.
+What it does: Returns current authenticated user.
+Inputs: Auth cookie listify_session or Authorization: Bearer token.
+Returns: AuthResponse with user.
+Auth required: Yes.
+Plan restrictions: None.
+
+PATCH /auth/profile
+Defined in backend/app/api/auth.py:82-92.
+What it does: Updates current user's display name.
+Inputs: Auth cookie/bearer token. JSON body name.
+Returns: AuthResponse with updated user.
+Auth required: Yes.
+Plan restrictions: None.
+
+POST /auth/change-password
+Defined in backend/app/api/auth.py:95-106.
+What it does: Verifies current password and stores a new bcrypt hash.
+Inputs: Auth cookie/bearer token. JSON body old_password and new_password.
+Returns: {"success": true}.
+Auth required: Yes.
+Plan restrictions: None.
+
+DELETE /auth/account
+Defined in backend/app/api/auth.py:109-126.
+What it does: Soft deletes user by setting deleted_at and deletes auth cookie.
+Inputs: Auth cookie/bearer token.
+Returns: {"success": true}.
+Auth required: Yes.
+Plan restrictions: None.
+
+Etsy OAuth endpoints:
+GET /etsy/connect
+Defined in backend/app/api/etsy.py:28-47.
+What it does: Generates OAuth state and PKCE verifier/challenge, stores state and verifier in HTTP-only cookies, returns Etsy authorization URL.
+Inputs: Auth cookie/bearer token.
+Returns: {"auth_url": "..."}.
+Auth required: Yes.
+Plan restrictions: None.
+
+GET /etsy/callback
+Defined in backend/app/api/etsy.py:50-101.
+What it does: Handles Etsy OAuth redirect, validates state, exchanges code for tokens, fetches primary shop, encrypts and stores Etsy tokens and shop metadata, redirects to frontend onboarding page with etsy status query.
+Inputs: Auth cookie/bearer token. Query params code, state, error. Cookies etsy_oauth_state and etsy_code_verifier.
+Returns: RedirectResponse to /onboarding?etsy=connected, denied, invalid, or failed.
+Auth required: Yes.
+Plan restrictions: None.
+
+Onboarding endpoints:
+GET /onboarding/status
+Defined in backend/app/api/onboarding.py:14-26.
+What it does: Reports whether Etsy and Claude are connected.
+Inputs: Auth cookie/bearer token.
+Returns: OnboardingStatus with etsy_connected, claude_key_added, complete.
+Auth required: Yes.
+Plan restrictions: None.
+
+POST /onboarding/claude-key
+Defined in backend/app/api/onboarding.py:29-46.
+What it does: Creates/loads primary shop and stores encrypted Claude API key.
+Inputs: Auth cookie/bearer token. JSON body claude_api_key.
+Returns: OnboardingStatus.
+Auth required: Yes.
+Plan restrictions: None.
+
+Dashboard and analytics endpoints:
+GET /dashboard/stats
+Defined in backend/app/api/dashboard.py:18-50.
+What it does: Returns primary shop info, total listing count, monthly listing count based on listing created_at, plan, limits, and connection flags.
+Inputs: Auth cookie/bearer token.
+Returns: DashboardStats.
+Auth required: Yes.
+Plan restrictions: None.
+
+GET /analytics/dashboard
+Defined in backend/app/api/analytics.py:29-69.
+What it does: Returns dashboard data including total listings, live listings, current usage with limits, plan, recent listings, and shop health data.
+Inputs: Auth cookie/bearer token.
+Returns: JSON with total_listings, live_listings, usage_this_month, plan, recent_listings, shop.
+Auth required: Yes.
+Plan restrictions: None.
+
+GET /analytics/usage
+Defined in backend/app/api/analytics.py:72-81.
+What it does: Returns current monthly usage counts and plan limits.
+Inputs: Auth cookie/bearer token.
+Returns: JSON with usage, usage_with_limits, and plan.
+Auth required: Yes.
+Plan restrictions: None.
+
+Settings endpoints:
+GET /settings
+Defined in backend/app/api/settings.py:23-39.
+What it does: Returns user settings, primary shop metadata, plan, connection flags, and Claude key last four characters if decryptable.
+Inputs: Auth cookie/bearer token.
+Returns: SettingsResponse.
+Auth required: Yes.
+Plan restrictions: None.
+
+PATCH /settings
+Defined in backend/app/api/settings.py:42-74.
+What it does: Updates current user name, shop_url, niche, and optionally encrypted Claude API key.
+Inputs: Auth cookie/bearer token. JSON body may include name, shop_url, niche, claude_api_key.
+Returns: SettingsResponse.
+Auth required: Yes.
+Plan restrictions: None.
+
+POST /shop/test-connection
+Defined in backend/app/api/analytics.py:84-138.
+What it does: Tests Etsy or Claude connection. Etsy test gets a valid Etsy token and GETs the shop. Claude test decrypts the saved Claude key and sends a minimal Anthropic message.
+Inputs: Auth cookie/bearer token. JSON body key_type equal to etsy or claude.
+Returns: {"success": true, "message": "..."} or 400 errors.
+Auth required: Yes.
+Plan restrictions: None.
+
+Shop analysis endpoints:
+GET /shop/analysis
+Defined in backend/app/api/shop.py:65-78.
+What it does: Returns stored shop analysis if it exists.
+Inputs: Auth cookie/bearer token.
+Returns: ShopAnalysisResponse with analyzed false, or analyzed true plus analysis and last_analyzed_at.
+Auth required: Yes.
+Plan restrictions: None.
+
+POST /shop/analyze
+Defined in backend/app/api/shop.py:81-154.
+What it does: Runs live shop analysis. It checks plan, requires Etsy connection and Claude key, refreshes Etsy token if needed, fetches Etsy shop/listing/sales data, derives niche, fetches Serper trends, calls Claude analysis, stores analysis_json and last_analyzed_at.
+Inputs: Auth cookie/bearer token. No body.
+Returns: The Claude analysis JSON.
+Auth required: Yes.
+Plan restrictions: FREE cannot use this endpoint. BASIC, PRO, and AGENCY can.
+
+Stripe endpoints:
+POST /stripe/checkout
+Defined in backend/app/api/billing.py:28-72.
+What it does: Creates a Stripe subscription Checkout Session for Basic, Pro, or Agency.
+Inputs: Auth cookie/bearer token. JSON body plan and optional annual boolean.
+Returns: CheckoutResponse with url.
+Auth required: Yes.
+Plan restrictions: FREE is rejected because it does not use checkout.
+
+POST /stripe/cancel
+Defined in backend/app/api/billing.py:75-91.
+What it does: Deletes Stripe subscription if present, then sets local user plan to FREE and clears stripe_subscription_id.
+Inputs: Auth cookie/bearer token.
+Returns: {"success": true}.
+Auth required: Yes.
+Plan restrictions: None.
+
+POST /stripe/webhook
+Defined in backend/app/api/billing.py:102-154.
+What it does: Verifies Stripe signature and processes checkout.session.completed, customer.subscription.created, customer.subscription.updated, and customer.subscription.deleted.
+Inputs: Raw request body and stripe-signature header.
+Returns: {"received": true}.
+Auth required: No user auth, but Stripe signature is required.
+Plan restrictions: None. It updates plan according to subscription status and price ID.
+
+Job endpoints:
+GET /jobs
+Defined in backend/app/api/jobs.py:37-41.
+What it does: Lists durable Job rows for the primary shop.
+Inputs: Auth cookie/bearer token.
+Returns: List of JobOut.
+Auth required: Yes.
+Plan restrictions: Requires a primary shop.
+
+POST /jobs/analyze-shop
+Defined in backend/app/api/jobs.py:44-60.
+What it does: Creates a PENDING ANALYZE job record.
+Inputs: Auth cookie/bearer token. JSON body focus optional string.
+Returns: JobOut.
+Auth required: Yes.
+Plan restrictions: Requires Etsy token and Claude key. Does not enforce FREE plan restriction even though /shop/analyze does.
+Implementation note: It does not actually enqueue or run analysis.
+
+POST /jobs/generate-listing
+Defined in backend/app/api/jobs.py:63-106.
+What it does: Checks monthly listing limit, creates a queued Listing, creates GENERATE_IMAGE and GENERATE_VIDEO Job rows, and returns the image job.
+Inputs: Auth cookie/bearer token. JSON body product_idea and optional target_price.
+Returns: JobOut for the image job.
+Auth required: Yes.
+Plan restrictions: Uses backend/app/core/plans.py listing limits. FREE has limit 0, BASIC 20, PRO 100, AGENCY unlimited.
+Implementation note: It creates jobs but no worker processes them.
+
+POST /jobs/upload-listing
+Defined in backend/app/api/jobs.py:109-135.
+What it does: Validates listing ownership, validates Etsy token, sets listing status QUEUED, creates UPLOAD_LISTING Job row.
+Inputs: Auth cookie/bearer token. JSON body listing_id.
+Returns: JobOut.
+Auth required: Yes.
+Plan restrictions: No usage or plan-limit enforcement here.
+Implementation note: It creates a Job row but does not use queue_service.enqueue_upload_job.
+
+Listing endpoints:
+GET /listings
+Defined in backend/app/api/listings.py:329-358.
+What it does: Lists paginated listings for the user's primary shop.
+Inputs: Auth cookie/bearer token. Query params status optional ListingStatus, page default 1, per_page default 20 max 100.
+Returns: PaginatedListingsResponse with listings, total, page, per_page.
+Auth required: Yes.
+Plan restrictions: None.
+
+POST /listings/generate-image
+Defined in backend/app/api/listings.py:361-414.
+What it does: Requires shop and Claude key, loads a product idea from shop analysis, applies user overrides, checks plan/image limits and usage, creates or updates a listing, refines prompt with Claude, calls OpenAI image generation, uploads image to Cloudinary, reviews prompt with Claude, stores image URL/prompt/review, and increments IMAGE_GENERATED usage.
+Inputs: Auth cookie/bearer token. JSON body product_idea_index, is_high_res, product_title, keywords, style_notes, estimated_price, optional listing_id.
+Returns: ImageGenerationResponse with listing_id, image_url, claude_review, image_urls, review_unavailable.
+Auth required: Yes.
+Plan restrictions: FREE blocked. High-res requires PRO or AGENCY. Per-listing image count is BASIC 3, PRO 10, AGENCY unlimited. Monthly IMAGE_GENERATED usage limit is checked through usage_service.
+
+POST /listings/{listing_id}/regenerate-image
+Defined in backend/app/api/listings.py:417-456.
+What it does: Regenerates an image for an existing listing, optionally using Claude's improved prompt, stores URL/prompt/review, and caps stored image history at 10.
+Inputs: Auth cookie/bearer token. Path listing_id. JSON body use_improved_prompt boolean.
+Returns: RegenerateImageResponse with image_url, claude_review, image_urls, review_unavailable.
+Auth required: Yes.
+Plan restrictions: FREE blocked and per-listing image limit enforced.
+Important gap: It does not check monthly IMAGE_GENERATED usage and does not call track_usage.
+
+POST /listings/{listing_id}/set-high-res
+Defined in backend/app/api/listings.py:459-488.
+What it does: Generates a high-resolution image for an existing listing, stores URL/prompt/review, and caps image history at 10.
+Inputs: Auth cookie/bearer token. Path listing_id.
+Returns: HighResImageResponse with image_url and image_urls.
+Auth required: Yes.
+Plan restrictions: PRO or AGENCY only, plus per-listing image limit.
+Important gap: It does not check monthly usage and does not call track_usage.
+
+GET /listings/{listing_id}/images
+Defined in backend/app/api/listings.py:491-505.
+What it does: Returns listing image URLs, current image, Claude review, and image prompt.
+Inputs: Auth cookie/bearer token. Path listing_id.
+Returns: ListingImagesResponse.
+Auth required: Yes.
+Plan restrictions: None.
+
+PATCH /listings/{listing_id}/approve-image
+Defined in backend/app/api/listings.py:508-524.
+What it does: Sets primary_image_url to an existing listing image and status to IMAGE_APPROVED.
+Inputs: Auth cookie/bearer token. Path listing_id. JSON body approved_image_url.
+Returns: ApproveImageResponse success true.
+Auth required: Yes.
+Plan restrictions: None.
+
+POST /listings/{listing_id}/generate-video
+Defined in backend/app/api/listings.py:527-564.
+What it does: Requires Pro/Agency and usage allowance, builds video input images, generates a local ffmpeg slideshow video, uploads it to Cloudinary, stores video_url, and tracks VIDEO_GENERATED usage.
+Inputs: Auth cookie/bearer token. Path listing_id.
+Returns: GenerateVideoResponse with video_url.
+Auth required: Yes.
+Plan restrictions: PRO or AGENCY only. Monthly VIDEO_GENERATED usage limit enforced.
+
+POST /listings/{listing_id}/generate-copy
+Defined in backend/app/api/listings.py:567-599.
+What it does: Calls Claude to write title, description, tags, and suggested price, stores them on the listing, and marks status COPY_READY.
+Inputs: Auth cookie/bearer token. Path listing_id.
+Returns: GenerateCopyResponse with title, description, tags, suggestedPrice.
+Auth required: Yes.
+Plan restrictions: None in current code.
+Important gap: No usage tracking or plan limit exists for copy generation.
+
+PATCH /listings/{listing_id}/copy
+Defined in backend/app/api/listings.py:602-627.
+What it does: Updates listing title, description, tags, and/or price. If title and description exist, status becomes COPY_READY.
+Inputs: Auth cookie/bearer token. Path listing_id. JSON body title, description, tags, price.
+Returns: SuccessResponse success true.
+Auth required: Yes.
+Plan restrictions: None.
+
+GET /listings/{listing_id}/package
+Defined in backend/app/api/listings.py:630-649.
+What it does: Returns all package review data for a listing.
+Inputs: Auth cookie/bearer token. Path listing_id.
+Returns: ListingPackageResponse.
+Auth required: Yes.
+Plan restrictions: None.
+
+PATCH /listings/{listing_id}/bundle
+Defined in backend/app/api/listings.py:652-664.
+What it does: Sets listing.is_bundle.
+Inputs: Auth cookie/bearer token. Path listing_id. JSON body is_bundle boolean.
+Returns: SuccessResponse success true.
+Auth required: Yes.
+Plan restrictions: None.
+
+POST /listings/{listing_id}/upload
+Defined in backend/app/api/listings.py:667-697.
+What it does: For manual mode, saves status QUEUED_MANUAL. For auto mode, requires disclaimer, Etsy connection, complete package, usage allowance, sets status QUEUED, enqueues upload job, and tracks LISTING_UPLOADED usage.
+Inputs: Auth cookie/bearer token. Path listing_id. JSON body mode auto/manual and disclaimer_accepted boolean.
+Returns: ListingUploadResponse with message and optional job_id.
+Auth required: Yes.
+Plan restrictions: Auto mode uses monthly LISTING_UPLOADED usage limit. Manual mode has no usage or plan enforcement.
+
+GET /listings/{listing_id}/status
+Defined in backend/app/api/listings.py:700-717.
+What it does: Returns listing status, Etsy listing ID, Etsy listing URL, and error message.
+Inputs: Auth cookie/bearer token. Path listing_id.
+Returns: ListingStatusResponse.
+Auth required: Yes.
+Plan restrictions: None.
+
+GET /listings/{listing_id}/download
+Defined in backend/app/api/listings.py:720-743.
+What it does: Builds a ZIP containing listing-copy.txt, images, and optional video.
+Inputs: Auth cookie/bearer token. Path listing_id.
+Returns: application/zip streaming response.
+Auth required: Yes.
+Plan restrictions: None.
+
+DELETE /listings/{listing_id}
+Defined in backend/app/api/listings.py:746-761.
+What it does: Deletes a listing unless status is QUEUED or LIVE.
+Inputs: Auth cookie/bearer token. Path listing_id.
+Returns: SuccessResponse success true.
+Auth required: Yes.
+Plan restrictions: None.
+
+POST /listings/bulk-queue
+Defined in backend/app/api/listings.py:764-789.
+What it does: Requires disclaimer and Etsy connection, validates each listing, checks upload usage before each queue operation, queues one upload per minute, tracks LISTING_UPLOADED for each queued listing, and returns queued count.
+Inputs: Auth cookie/bearer token. JSON body listing_ids list of UUIDs and disclaimer_accepted boolean.
+Returns: BulkQueueResponse queued_count.
+Auth required: Yes.
+Plan restrictions: Monthly LISTING_UPLOADED usage limit enforced per listing.
+
+Autogenerated FastAPI documentation endpoints:
+GET /docs and GET /redoc are enabled by backend/app/main.py:15-16. They are public unless disabled by deployment config.
+
+SECTION 5 - AI PIPELINE
+
+AI and AI-adjacent services currently used:
+Claude Sonnet model claude-sonnet-4-5 is used for shop analysis, listing copy generation, image prompt refinement, image prompt review, and Claude key testing.
+OpenAI GPT Image model gpt-image-1 is used for product image generation.
+Gemini/Veo is not actively used. A boundary exists in video_service.py but returns None.
+Serper is used for search trend data. It is not an LLM, but it supplies trend context to Claude.
+Local ffmpeg is used for video rendering. This is not an AI service.
+
+Claude shop analysis:
+File and function:
+backend/app/services/claude_service.py:116, analyze_shop.
+Prompt construction:
+backend/app/services/claude_service.py:53-58, _build_prompt.
+Claude API call:
+backend/app/services/claude_service.py:61-94, _call_claude.
+Caller:
+backend/app/api/shop.py:134-136 decrypts shop.claude_api_key_encrypted and calls analyze_shop.
+Who pays:
+The seller/user pays because the request uses the user's stored Claude API key, not a platform Anthropic key.
+What response is used for:
+The returned JSON is stored in shop.analysis_json and shop.last_analyzed_at at backend/app/api/shop.py:148-152. Frontend uses it to show niche, strengths, opportunities, and product ideas.
+Actual fixed prompt text:
+You are an expert Etsy marketplace analyst with deep knowledge of trends, buyer psychology, and digital product strategies.
+
+Analyze the following Etsy shop data and current market trends carefully.
+
+Shop Data:
+__SHOP_DATA__
+
+Current Market Trends:
+__TRENDS__
+
+Respond ONLY in valid JSON with this exact structure, no extra text:
+{
+  "niche": "string",
+  "style": "string",
+  "strengths": ["string", "string", "string", "string", "string"],
+  "opportunities": [
+    { "title": "string", "description": "string" },
+    { "title": "string", "description": "string" },
+    { "title": "string", "description": "string" }
+  ],
+  "productIdeas": [
+    {
+      "title": "string",
+      "descriptionIdea": "string",
+      "targetKeywords": ["string", "string", "string"],
+      "suggestedPrice": number,
+      "potential": "High" | "Medium" | "Low",
+      "rationale": "string"
+    }
+  ]
+}
+Return exactly 3 opportunities and exactly 10 productIdeas.
+
+At runtime, __SHOP_DATA__ is replaced with JSON dumped Etsy shop data and __TRENDS__ is replaced with JSON dumped trend strings.
+Retry prompt if parsing fails:
+The original prompt is sent again with this suffix from backend/app/services/claude_service.py:122-126:
+Your previous response was not valid parseable JSON. Return only one JSON object, with double-quoted keys and strings, no markdown fences, no comments, and no prose.
+
+Claude listing copy:
+File and function:
+backend/app/services/copy_service.py:123, generate_listing_copy.
+Prompt construction:
+backend/app/services/copy_service.py:42-49, _build_prompt.
+Claude API call:
+backend/app/services/copy_service.py:52-86, _call_claude.
+Caller:
+backend/app/api/listings.py:567-599, generate_copy.
+Who pays:
+The seller/user pays because it uses the decrypted Claude key stored on the shop.
+What response is used for:
+The response title, description, tags, and suggestedPrice are written to Listing fields and status becomes COPY_READY at backend/app/api/listings.py:586-590.
+Actual fixed prompt text:
+You are an expert Etsy SEO copywriter. Write a complete listing for this product.
+
+Product: __PRODUCT_IDEA__
+Shop niche and style: __SHOP_NICHE__, __SHOP_STYLE__
+Target keywords: __KEYWORDS__
+
+Return ONLY valid JSON with no extra text:
+{
+  "title": "string (max 140 chars, keyword-rich, natural)",
+  "description": "string (300-500 words, engaging, SEO optimized, uses line breaks)",
+  "tags": ["string", ...] (exactly 13 tags, mix of broad and specific),
+  "suggestedPrice": number
+}
+
+At runtime, __PRODUCT_IDEA__ is replaced with product idea/listing data JSON, __SHOP_NICHE__ and __SHOP_STYLE__ come from shop analysis, and __KEYWORDS__ is replaced with a JSON keyword list.
+Retry prompt if parsing fails:
+The original prompt is sent again with this suffix from backend/app/services/copy_service.py:133-137:
+Your previous response was not valid parseable JSON. Return exactly one JSON object with double-quoted keys and strings, no markdown fences, no comments, and no prose.
+
+Claude image prompt refinement and size choice:
+File and function:
+backend/app/services/image_review_service.py:61, choose_image_prompt_and_size.
+Claude API call:
+backend/app/services/image_review_service.py:13-35, _call_claude.
+Caller:
+backend/app/api/listings.py:290-326, _generate_reviewed_image.
+Who pays:
+The seller/user pays because it uses the decrypted Claude key.
+What response is used for:
+The JSON prompt and size fields are used as the final OpenAI image prompt and image size at backend/app/api/listings.py:299-310.
+Actual prompt text:
+You are an Etsy product photography director.
+
+Improve this image generation prompt only if it will make the result more high-converting for Etsy.
+
+Prompt:
+"{image_prompt}"
+
+Product: {_product_title(product_idea)}
+Target keywords: {", ".join(_keywords(product_idea))}
+Shop style notes: {shop_style}
+High resolution requested: {is_high_res}
+
+Choose the best image layout size for this product from exactly these values:
+1024x1024, 1024x1536, 1536x1024
+
+Respond ONLY in valid JSON:
+{
+  "prompt": "string",
+  "size": "1024x1024" | "1024x1536" | "1536x1024"
+}
+
+Claude image review:
+File and function:
+backend/app/services/image_review_service.py:102, review_image.
+Claude API call:
+backend/app/services/image_review_service.py:13-35, _call_claude.
+Caller:
+backend/app/api/listings.py:325, _generate_reviewed_image.
+Who pays:
+The seller/user pays because it uses the decrypted Claude key.
+What response is used for:
+The response becomes listing.claude_review_json and is returned to the frontend for feedback and optional improved prompt usage.
+Actual prompt text:
+You are an Etsy product listing expert.
+A product image was generated using this prompt:
+"{image_prompt}"
+
+The product is: {_product_title(product_idea)}
+Target keywords: {", ".join(_keywords(product_idea))}
+
+Review if this prompt would produce a professional, high-converting Etsy listing image.
+Respond ONLY in valid JSON:
+{
+  "approved": boolean,
+  "feedback": "string (1-2 sentences)",
+  "improvedPrompt": "string (improved image generation prompt)"
+}
+
+Claude key test:
+File and function:
+backend/app/api/analytics.py:84-138, test_connection.
+Claude API call:
+backend/app/api/analytics.py:118-131.
+Who pays:
+The seller/user pays because it uses the decrypted Claude key.
+Prompt sent:
+Hello
+What response is used for:
+The response body is not used beyond checking that Anthropic returns a non-error status.
+
+OpenAI image generation:
+File and function:
+backend/app/services/image_service.py:54, generate_product_image.
+Caller:
+backend/app/api/listings.py:310.
+Model:
+gpt-image-1 in backend/app/services/image_service.py:11.
+Who pays:
+The platform pays because it uses OPENAI_API_KEY from backend environment settings at backend/app/services/image_service.py:55-61.
+Prompt sent:
+The prompt is either the output of build_image_prompt or Claude's refined prompt.
+build_image_prompt is in backend/app/services/image_service.py:25-45 and creates a single-line prompt from these parts:
+Create a clean product mockup for an Etsy listing titled: {title}.
+Use a white or soft neutral background, balanced natural lighting, and a professional marketplace composition.
+The image should look like polished Etsy listing photography, not a banner, poster, or ad.
+Visual style notes: {style_text}.
+Optional: Product concept: {description}.
+Optional: Target buyer search keywords to visually support: {keyword_text}.
+Optional high-res suffix: Ultra detailed, 4K quality, professional product photography.
+Request payload:
+model gpt-image-1, prompt, size, quality high for high-res else medium, n=1 at backend/app/services/image_service.py:63-69.
+What response is used for:
+The first b64_json image is uploaded to Cloudinary, then the Cloudinary secure_url is stored in Listing.image_urls.
+
+Gemini/Veo video boundary:
+File and function:
+backend/app/services/video_service.py:32, _generate_with_gemini.
+Current behavior:
+The function checks settings.gemini_api_key but returns None. Comment at backend/app/services/video_service.py:41-43 says Veo/Gemini access is intentionally not active in Phase 4.
+Who pays:
+Currently nobody pays for Gemini because no Gemini call is made. If enabled, the platform would pay because GEMINI_API_KEY is an environment setting.
+What response is used for:
+None currently. generate_listing_video falls back to local ffmpeg at backend/app/services/video_service.py:183-196.
+
+Local video generation:
+File and function:
+backend/app/services/video_service.py:183, generate_listing_video.
+What it does:
+Downloads image URLs, renders a 1080x1080 ffmpeg slideshow with zoom/crossfade or concat fallback, returns MP4 bytes, and uploads to Cloudinary through upload_video.
+AI service used:
+None currently.
+Who pays:
+Platform pays Cloudinary storage/bandwidth. No AI call occurs.
+
+Serper trend search:
+File and function:
+backend/app/services/trends_service.py:66, _fetch_serper_results.
+Caller:
+backend/app/api/shop.py:127 calls fetch_trends.
+Who pays:
+The platform pays because it uses SERPER_API_KEY from backend environment settings.
+Queries sent:
+trending etsy products 2025 {niche}
+best selling etsy {niche} product ideas
+What response is used for:
+Organic titles, related searches, and people-also-ask questions are cleaned into up to 10 trend ideas and passed into Claude shop analysis.
+
+SECTION 6 - FRONTEND PAGES
+
+Route: /
+File: app/(marketing)/page.tsx.
+What it shows: Public landing page with hero, features, pricing cards, FAQ, footer links.
+Backend APIs called: None.
+State management: None. Server component/static render.
+
+Route: /login
+File: app/(auth)/login/page.tsx and components/LoginForm.tsx.
+What it shows: Login form.
+Backend APIs called: POST /auth/login at components/LoginForm.tsx:21-27.
+State management: useState for loading in LoginForm. Next router push/refresh after login.
+
+Route: /register
+File: app/(auth)/register/page.tsx and components/RegisterForm.tsx.
+What it shows: Account creation form.
+Backend APIs called: POST /auth/register at components/RegisterForm.tsx:21-28.
+State management: useState for loading. Next router push/refresh after registration.
+
+Route group layout for dashboard routes:
+File: app/(dashboard)/layout.tsx.
+What it shows: Sidebar plus authenticated main content.
+Backend APIs called: GET /auth/me via getCurrentUser at app/(dashboard)/layout.tsx:7 and lib/server-api.ts:26-28.
+State management: Server component. Redirects unauthenticated users to /login.
+
+Route: /dashboard
+File: app/(dashboard)/dashboard/page.tsx.
+What it shows: Dashboard stats, usage bars, plan badge, quick actions, recent listings, shop health, tips, welcome modal.
+Backend APIs called: GET /analytics/dashboard at app/(dashboard)/dashboard/page.tsx:45.
+State management: useState for data, loading, tipsOpen, welcomeOpen. useEffect for loading. Suspense for search params.
+
+Route: /shop-analysis
+File: app/(dashboard)/shop-analysis/page.tsx.
+What it shows: Shop analysis result, opportunities, product ideas, product idea links, progress UI for analysis.
+Backend APIs called: GET /shop/analysis at line 208. POST /shop/analyze at line 239.
+State management: useState for analysis, lastAnalyzedAt, loading, analyzing, activeStep. useEffect for initial load and progress timer.
+
+Route: /new-listing
+File: app/(dashboard)/new-listing/page.tsx and components/NewListingForm.tsx.
+What it shows: Three-step image generation and approval workflow.
+Backend APIs called:
+GET /auth/me at components/NewListingForm.tsx:102.
+POST /listings/generate-image at lines 204 and 292.
+POST /listings/{listingId}/regenerate-image at line 223.
+POST /listings/{listingId}/set-high-res at line 246.
+PATCH /listings/{listingId}/approve-image at line 268.
+State management: Extensive local useState for step, plan, title, keywords, style notes, price, listing ID, image URLs, current/approved image, Claude review, loading action, drag index, upgrade modal. useEffect for plan load and loading step progress.
+
+Route: /new-listing/package?listing_id=...
+File: app/(dashboard)/new-listing/package/page.tsx.
+What it shows: Package review with image carousel, video generation, copy generation/editing, tags, price, bundle flag, upload handoff.
+Backend APIs called:
+GET /listings/{listingId}/package at line 117 and during video polling line 154.
+GET /auth/me at line 129.
+POST /listings/{listingId}/generate-video at line 191.
+POST /listings/{listingId}/generate-copy at line 228.
+PATCH /listings/{listingId}/copy at line 261.
+PATCH /listings/{listingId}/bundle at line 320.
+State management: useState for plan, listingPackage, loading, errors, image index, video loading/progress, copy loading, saving field, title, description, tags, tag input, price, bundle flag, upgrade modal. useRef for video completion. useEffect for initial load and video polling.
+
+Route: /new-listing/upload?listing_id=...
+File: app/(dashboard)/new-listing/upload/page.tsx.
+What it shows: Automatic Etsy upload option with risk disclaimer, manual review queue option, upload progress modal, live/failed result.
+Backend APIs called:
+GET /listings/{listingId}/status at line 52.
+POST /listings/{listingId}/upload with mode auto at line 92.
+POST /listings/{listingId}/upload with mode manual at line 107.
+State management: useState for accepted, uploading, manualLoading, status, activeStep. useEffect for polling and progress timer. useMemo for completed step.
+
+Route: /my-listings
+File: app/(dashboard)/my-listings/page.tsx.
+What it shows: Listing management table with filters, pagination, selection, ZIP download, delete, retry/upload links, Etsy link.
+Backend APIs called:
+GET /listings with page/per_page/status query at line 61.
+GET /listings/{id}/download at line 83.
+DELETE /listings/{id} at line 100.
+State management: useState for listings, total, page, filter, loading, selected, downloadingId, deletingId. useMemo for selectedDrafts. useCallback for loadListings.
+
+Route: /listings
+File: app/(dashboard)/listings/page.tsx.
+What it shows: Simpler server-rendered listings table.
+Backend APIs called: GET /listings via getListings at app/(dashboard)/listings/page.tsx:15 and lib/server-api.ts:42-44.
+State management: Server component only.
+
+Route: /bulk-listings
+File: app/(dashboard)/bulk-listings/page.tsx.
+What it shows: Bulk upload page for draft listings with Etsy risk disclaimer and selection controls.
+Backend APIs called:
+GET /listings?status=DRAFT&page=1&per_page=100 at line 44.
+POST /listings/bulk-queue at line 81.
+State management: useState for listings, selected, accepted, loading, queueing, queuedCount. useMemo for preselected IDs. useCallback for loadDrafts. Suspense for search params.
+
+Route: /settings
+File: app/(dashboard)/settings/page.tsx.
+What it shows: Shop settings, Claude key update/test, Etsy test, subscription/usage, profile update, password change, account deletion.
+Backend APIs called:
+GET /settings at line 43.
+GET /analytics/usage at line 44.
+PATCH /settings at line 64.
+POST /shop/test-connection at line 79.
+POST /stripe/checkout at line 94.
+POST /stripe/cancel at line 104.
+PATCH /auth/profile at line 116.
+POST /auth/change-password at line 128.
+DELETE /auth/account at line 144.
+State management: useState for settings, usage, Claude key, name, passwords, delete confirmation, modal, loading, connectionStatus. useEffect loads settings.
+
+Route: /upgrade
+File: app/(dashboard)/upgrade/page.tsx.
+What it shows: Basic, Pro, Agency pricing, annual billing toggle, checkout buttons, feature comparison.
+Backend APIs called:
+GET /auth/me at line 28.
+POST /stripe/checkout at line 41.
+State management: useState for currentPlan, annual, loadingPlan. useEffect loads current plan.
+
+Route: /onboarding
+File: app/(dashboard)/onboarding/page.tsx and components/OnboardingSteps.tsx.
+What it shows: Etsy connect step, Claude key step, analysis progress screen.
+Backend APIs called:
+GET /onboarding/status via server component at app/(dashboard)/onboarding/page.tsx:9.
+GET /etsy/connect at components/OnboardingSteps.tsx:91.
+POST /onboarding/claude-key at line 115.
+POST /jobs/analyze-shop at line 58.
+POST /shop/analyze at line 59.
+GET /shop/analysis during polling at line 65.
+State management: Server component for initial status. Client component useState for onboarding status, Claude key, connecting, saving, analyzing, activeStep. useRef stores interval ID. useEffect cleans polling interval.
+
+Special pages:
+app/not-found.tsx shows a page-not-found message and link to dashboard.
+app/global-error.tsx captures errors with Sentry and provides a reload button.
+loading.tsx pages provide skeletons for dashboard, shop-analysis, and my-listings.
+
+Global state management:
+There is no Redux, Zustand, React Query, Apollo, or other global state manager. State is local React useState/useEffect/useMemo/useCallback and Next server components. Authentication state lives in the backend cookie and is refreshed by calling /auth/me.
+
+SECTION 7 - CURRENT USAGE TRACKING
+
+Is there usage/credit tracking in the codebase right now?
+Yes, usage tracking exists. Credit-balance tracking does not exist.
+
+Where it is:
+Database model:
+backend/app/models/usage.py defines the Usage table and UsageAction enum.
+
+Migration:
+backend/alembic/versions/202605250006_usage_launch_ready.py creates the usage table and usage_action enum.
+
+Service:
+backend/app/services/usage_service.py implements current_month, track_usage, get_usage_this_month, check_plan_limit, and usage_with_limits.
+
+Endpoints using usage tracking:
+backend/app/api/listings.py:371-372 checks image usage before first image generation and line 406 tracks IMAGE_GENERATED.
+backend/app/api/listings.py:533-534 checks video usage and line 563 tracks VIDEO_GENERATED.
+backend/app/api/listings.py:689 checks upload usage and line 696 tracks LISTING_UPLOADED for auto upload.
+backend/app/api/listings.py:780 checks upload usage and line 786 tracks LISTING_UPLOADED for each bulk queued listing.
+backend/app/api/analytics.py:72-81 exposes usage through /analytics/usage.
+backend/app/api/analytics.py:50-54 includes usage_with_limits in /analytics/dashboard.
+
+How it works:
+Usage rows are counted per user, action, and month. The month string is generated in UTC as YYYY-MM at backend/app/services/usage_service.py:34-35. track_usage finds or creates the row for the current month and increments count at backend/app/services/usage_service.py:42-56. check_plan_limit loads the user, gets the action limit for the user's plan, gets current usage, and returns allowed, used, and limit at backend/app/services/usage_service.py:70-76.
+
+What is tracked:
+IMAGE_GENERATED.
+VIDEO_GENERATED.
+LISTING_UPLOADED.
+
+What is not tracked:
+Image regeneration is not tracked.
+High-res image generation is not tracked.
+Copy generation is not tracked.
+Manual upload queue/save is not tracked.
+Shop analysis is not tracked.
+Durable job endpoints in backend/app/api/jobs.py do not track usage.
+There is no credit balance, credit ledger, credit purchase/grant, credit refund, or idempotency key support.
+
+Files and functions that would need changes to add a true credit system:
+backend/app/models/user.py: add user credit balance fields if balance is stored on users.
+backend/app/models/__init__.py: export any new CreditLedger/CreditTransaction model.
+backend/app/models/usage.py or a new backend/app/models/credit.py: define credit ledger/action enum.
+backend/alembic/versions: add a new migration for credit balance and ledger.
+backend/app/services/usage_service.py or new backend/app/services/credit_service.py: implement atomic check, reserve/deduct, refund, ledger, and credit costs.
+backend/app/api/listings.py: add credit checks/deductions to image generation, image regeneration, high-res image generation, video generation, copy generation, auto upload, and bulk upload.
+backend/app/api/jobs.py: add credit checks/deductions if job endpoints remain callable for generation/upload.
+backend/app/api/auth.py: optionally grant starter credits at registration.
+backend/app/api/billing.py: grant monthly credits on Stripe webhook events or when a plan changes.
+backend/app/api/analytics.py, backend/app/api/dashboard.py, backend/app/api/settings.py: return credit balance to the frontend.
+backend/app/schemas/dashboard.py, backend/app/schemas/settings.py, backend/app/schemas/auth.py, and possibly new schemas/credits.py: expose credit fields and structured insufficient-credit responses.
+lib/api.ts: parse structured error detail objects instead of only string detail.
+lib/types.ts: add credit balance fields and credit error/ledger types.
+app/(dashboard)/dashboard/page.tsx, app/(dashboard)/settings/page.tsx, components/UsageBar.tsx or a new CreditBalance component: show balance.
+components/NewListingForm.tsx: show/handle insufficient credits for image, regenerate, high-res.
+app/(dashboard)/new-listing/package/page.tsx: show/handle insufficient credits for video and copy.
+app/(dashboard)/new-listing/upload/page.tsx and app/(dashboard)/bulk-listings/page.tsx: show/handle insufficient credits for Etsy upload.
+
+SECTION 8 - PLAN AND SUBSCRIPTION LOGIC
+
+Where plan limits are enforced in the backend:
+backend/app/core/plans.py defines high-level listing/shop limits:
+FREE listings 0, shops 1.
+BASIC listings 20, shops 1.
+PRO listings 100, shops 3.
+AGENCY listings unlimited, shops 10.
+
+backend/app/services/usage_service.py defines action usage limits:
+FREE image 0, video 0, upload 0.
+BASIC image 20, video 0, upload 20.
+PRO image 100, video 50, upload 100.
+AGENCY image 500, video 200, upload 500.
+
+backend/app/api/listings.py defines per-listing image limits in IMAGE_LIMITS:
+FREE 0.
+BASIC 3.
+PRO 10.
+AGENCY unlimited.
+
+backend/app/api/listings.py enforces:
+FREE cannot generate images at lines 95-100.
+High-res image requires PRO or AGENCY at lines 101-105.
+Per-listing image count at lines 107-112.
+Video generation requires PRO or AGENCY at lines 115-120.
+Monthly usage limits through _require_usage_allowed at lines 123-127.
+
+backend/app/api/shop.py enforces:
+FREE cannot use live shop analysis at lines 86-90.
+
+backend/app/api/jobs.py enforces:
+Monthly listing count limit for /jobs/generate-listing at lines 73-75.
+
+Current plan limits:
+Core plan limits from backend/app/core/plans.py:
+FREE: 0 listings/month, 1 shop.
+BASIC: 20 listings/month, 1 shop.
+PRO: 100 listings/month, 3 shops.
+AGENCY: unlimited listings/month, 10 shops.
+
+Usage-service action limits from backend/app/services/usage_service.py:
+FREE: 0 images, 0 videos, 0 uploads per month.
+BASIC: 20 images, 0 videos, 20 uploads per month.
+PRO: 100 images, 50 videos, 100 uploads per month.
+AGENCY: 500 images, 200 videos, 500 uploads per month.
+
+Per-listing image limits from backend/app/api/listings.py:
+FREE: 0 images per listing.
+BASIC: 3 images per listing.
+PRO: 10 images per listing.
+AGENCY: unlimited images per listing.
+
+Frontend marketing/pricing plan limits:
+lib/plans.ts says Basic 20 listings/month, Pro 100 listings/month, Agency unlimited listings.
+app/(dashboard)/upgrade/page.tsx says Basic 20 images and 20 uploads, Pro 100 images/50 videos/100 uploads, Agency 500 images/200 videos/500 uploads.
+These mostly align with usage_service but use "listings" language in some places and "images/uploads" in others.
+
+How the backend knows which plan a user is on:
+The current plan is stored in users.plan as a Plan enum in backend/app/models/user.py:26.
+New users default to FREE.
+Stripe checkout stores user_id and plan in metadata at backend/app/api/billing.py:66-67.
+Stripe webhooks update users.plan based on subscription status and Stripe price ID at backend/app/api/billing.py:135-143.
+Stripe subscription deleted sets plan to FREE at backend/app/api/billing.py:145-152.
+Manual cancel endpoint also sets plan to FREE at backend/app/api/billing.py:87-90.
+
+Are plan limits enforced consistently on all AI endpoints?
+No.
+
+Consistent areas:
+POST /listings/generate-image checks plan, high-res restrictions, per-listing image cap, monthly IMAGE_GENERATED usage, and tracks usage.
+POST /listings/{listing_id}/generate-video checks PRO/AGENCY, monthly VIDEO_GENERATED usage, and tracks usage.
+POST /listings/{listing_id}/upload in auto mode checks monthly LISTING_UPLOADED usage and tracks usage.
+POST /listings/bulk-queue checks upload usage per listing and tracks usage per listing.
+POST /shop/analyze blocks FREE.
+
+Inconsistent or missing areas:
+POST /listings/{listing_id}/regenerate-image enforces FREE/per-listing image cap but does not check monthly usage and does not track usage.
+POST /listings/{listing_id}/set-high-res enforces PRO/AGENCY and per-listing cap but does not check monthly usage and does not track usage.
+POST /listings/{listing_id}/generate-copy has no plan restriction, no usage limit, and no usage tracking.
+POST /jobs/analyze-shop does not enforce the FREE restriction that /shop/analyze enforces.
+POST /jobs/upload-listing does not enforce usage limits and does not enqueue the real upload queue.
+Manual upload mode saves QUEUED_MANUAL without usage tracking.
+Shop count limits are defined in core/plans.py but no code enforces the shop count. The app currently only creates/uses one primary shop via get_or_create_primary_shop.
+Dashboard monthly_usage in backend/app/api/dashboard.py counts listings created this month, while analytics usage uses the Usage table. This means /dashboard/stats and /analytics/dashboard can report different concepts.
+
+SECTION 9 - SECURITY REVIEW
+
+How API keys are stored and encrypted:
+Platform keys such as OPENAI_API_KEY, GEMINI_API_KEY, SERPER_API_KEY, Cloudinary keys, Stripe secret/webhook secret, Etsy client ID, JWT secret, and ENCRYPTION_KEY are stored in backend environment variables defined by backend/.env.example.
+
+User Etsy tokens and Claude keys are stored encrypted in the shops table:
+shops.etsy_access_token_encrypted.
+shops.etsy_refresh_token_encrypted.
+shops.claude_api_key_encrypted.
+
+Encryption and decryption are in backend/app/core/security.py:41-87.
+The code accepts a 64-character hex ENCRYPTION_KEY or 32 raw bytes.
+encrypt_secret uses AES-CBC with a random 16-byte IV and PKCS7 padding. It stores base64url(iv):base64url(ciphertext).
+decrypt_secret reverses that process.
+
+Important encryption gap:
+AES-CBC encryption is not authenticated. There is no HMAC or AEAD mode such as AES-GCM. This means encrypted values are confidential but not tamper-evident. A stronger implementation should use Fernet, AES-GCM, or AES-CBC plus HMAC.
+
+How auth tokens are managed:
+JWTs are created with HS256 in backend/app/core/security.py:25-31.
+Tokens contain sub and exp only.
+Tokens are stored in an HTTP-only cookie by backend/app/api/auth.py:24-32.
+Default cookie name is listify_session.
+Cookie expiration defaults to 7 days through access_token_expire_minutes at backend/app/core/config.py:40.
+get_current_user reads the cookie or bearer token, decodes it, validates UUID, loads the user, and rejects soft-deleted users at backend/app/core/deps.py:25-51.
+
+Sensitive endpoint protection:
+Most user data and state-changing endpoints require get_current_user.
+/stripe/webhook has no user auth but verifies Stripe signature, which is correct for webhooks.
+/health is public, which is normal.
+/auth/logout is public in code, but it only deletes the caller's cookie.
+/docs and /redoc are public because FastAPI docs are enabled.
+
+Security strengths:
+Passwords are hashed with bcrypt through passlib.
+JWTs are in HTTP-only cookies, reducing exposure to JavaScript.
+Bearer token fallback exists for API clients.
+Etsy OAuth uses PKCE and state cookies.
+Etsy and Claude secrets are not returned raw to the frontend.
+CORS allows only the configured frontend origin and credentials in backend/app/main.py:19-25.
+TrustedHostMiddleware is configured from frontend/backend hostnames in backend/app/middleware/security.py:13-25.
+Stripe webhooks verify stripe-signature.
+Rate limiting is globally configured with SlowAPI at 60/minute.
+
+Security gaps and risks:
+No CSRF token protection exists for cookie-authenticated state-changing requests. SameSite=Lax helps, but a production SaaS should add CSRF protection for POST/PATCH/DELETE endpoints.
+cookie_secure defaults to False in backend/app/core/config.py:39. Production must set COOKIE_SECURE=true.
+AES-CBC encryption lacks authentication.
+JWT tokens have no jti, rotation, server-side invalidation, or logout revocation list. Password changes do not invalidate existing sessions.
+Account deletion does not cancel the Stripe subscription or revoke Etsy tokens; it only soft-deletes locally and deletes the cookie.
+Stripe checkout errors return str(exc) to clients at backend/app/api/billing.py:69-70 and cancel errors at lines 85-86. This can expose provider details.
+The in-memory upload queue is not durable and runs in-process. A server restart loses queued jobs.
+Rate limiting is IP-based only, not user-based or endpoint-cost-based. Expensive AI endpoints should have stricter per-user rate limits.
+No explicit file size/content-type checks exist when downloading images/videos from URLs for ZIP or Etsy upload. The URLs are generated by the app, but defense-in-depth would still help.
+No backend Sentry/error tracking exists, despite many third-party integration points.
+Frontend error parsing in lib/api.ts only handles string detail. Structured security/credit errors would currently become "Something went wrong".
+The app exposes public /docs and /redoc in backend/app/main.py. That may be acceptable in staging but should be evaluated for production.
+Etsy callback depends on the user auth cookie still being present on callback. Cross-domain cookie settings must be correct or OAuth can fail.
+
+SECTION 10 - WHAT IS MISSING / NOT YET IMPLEMENTED
+
+Features mentioned or scaffolded but not fully implemented:
+External AI/Etsy worker pipeline:
+backend/app/workers/pipeline.py:5 says "Placeholder boundary for external AI/Etsy workers." mark_job_as_queued only sets status PENDING. There is no worker execution for Job rows created by backend/app/api/jobs.py.
+
+Durable job endpoints:
+backend/app/api/jobs.py creates jobs for analyze, generate image/video, and upload, but no code processes those Job records. The actual working flow is mostly synchronous listing endpoints plus queue_service for Etsy upload.
+
+Gemini/Veo video:
+backend/app/services/video_service.py:32-43 defines _generate_with_gemini but intentionally returns None. Video generation currently uses local ffmpeg slideshow only.
+
+Credit system:
+No credit balance, credit ledger, credit deduction, insufficient-credit response shape, or plan credit grants exist.
+
+Copy usage tracking:
+Copy generation is real but not tracked or limited.
+
+Regeneration/high-res usage tracking:
+Regeneration and high-res image generation are real but not tracked in monthly usage.
+
+Shop count enforcement:
+core/plans.py defines shop limits, but services/shops.py only ever gets or creates a primary shop and does not enforce multi-shop limits.
+
+READY_TO_UPLOAD status:
+ListingStatus includes READY_TO_UPLOAD, and migration adds it, but the current flow does not set this status in listings.py. Package readiness is computed frontend-side.
+
+Backend Sentry:
+README says Sentry is only frontend. There is no backend Sentry setup.
+
+Subscription lifecycle completeness:
+Account deletion does not cancel Stripe. Plan cancellation immediately sets plan FREE locally but does not handle proration, grace periods, or subscription status sync beyond Stripe delete.
+
+OAuth disconnect/revoke:
+There is no endpoint to disconnect Etsy or remove Claude key.
+
+Tests:
+No test files are present. There are no unit/integration tests for auth, billing, AI usage limits, Etsy queueing, or security behavior.
+
+TODOs, placeholders, and placeholder-like comments found:
+backend/app/workers/pipeline.py:5 contains "Placeholder boundary for external AI/Etsy workers."
+backend/app/services/video_service.py:41-43 says Veo/Gemini access is intentionally not active in Phase 4.
+README.md:162-164 says provider-specific Claude, GPT-4o, Gemini, and Etsy upload workers can be added behind backend/app/workers/pipeline.py without changing frontend contract. This describes future worker work, not implemented behavior.
+
+Stub or empty implementations:
+backend/app/workers/pipeline.py mark_job_as_queued is a stub.
+backend/app/services/video_service.py _generate_with_gemini is a disabled stub.
+backend/app/api/jobs.py endpoints create Job rows but do not process them.
+backend/app/middleware/__init__.py is empty by design.
+Package marker files backend/__init__.py, backend/app/__init__.py, backend/app/api/__init__.py, backend/app/services/__init__.py, backend/app/schemas/__init__.py are intentionally minimal package files.
+
+Other notable issues:
+components/NewListingForm.tsx:49 says "GPT-4o is creating your image..." but backend/app/services/image_service.py uses gpt-image-1. README.md:164 also mentions GPT-4o workers. The UI/documentation should be updated or the backend model should be changed intentionally.
+app/(dashboard)/new-listing/upload/page.tsx:189 contains a mojibake celebration string "ðŸŽ‰", indicating an encoding issue in the source file.
+app/(dashboard)/listings/page.tsx and app/(dashboard)/my-listings/page.tsx overlap in purpose; /my-listings is richer.
+components/SettingsForm.tsx appears to be a reusable/older settings form but app/(dashboard)/settings/page.tsx implements its own settings UI and does not use SettingsForm.
+
+SECTION 11 - CREDIT SYSTEM REQUIREMENTS
+
+Credit costs requested:
+Image generation: 5 credits.
+Image regeneration: 5 credits.
+High-res image: 8 credits.
+Video generation: 10 credits.
+Copy generation: 2 credits.
+Etsy listing upload: 3 credits.
+
+Exact files to modify:
+Backend database/model layer:
+backend/app/models/user.py: add credit_balance integer, default 0, not null. Optional fields such as credits_updated_at or monthly_credit_reset_at can also live here.
+backend/app/models/usage.py or new backend/app/models/credit.py: add CreditLedger model and CreditAction enum. I recommend a new credit.py so count-based usage remains separate from money-like credit accounting.
+backend/app/models/__init__.py: export CreditLedger and CreditAction.
+backend/alembic/versions: add a migration that adds users.credit_balance and creates credit_ledger.
+backend/app/db/base.py: no direct change likely needed, because Base metadata imports models through backend/app/models/__init__.py.
+
+Backend service layer:
+New backend/app/services/credit_service.py: define CREDIT_COSTS, InsufficientCreditsError, get_credit_balance, require_credits, deduct_credits, refund_credits, grant_monthly_plan_credits, and ledger creation. Use row locks or atomic UPDATE to avoid race conditions.
+backend/app/services/usage_service.py: either keep existing usage tracking for analytics or call credit_service from it. Do not overload Usage.count as credits because it lacks balance, ledger, and per-action cost.
+backend/app/core/plans.py: add monthly credit grants per plan if subscriptions should grant recurring credits. Example: FREE 0, BASIC 100, PRO 500, AGENCY 2000. The exact grant amounts need product decision.
+
+Backend API layer:
+backend/app/api/listings.py:
+Add 5-credit check/deduct in generate_image before calling Claude/OpenAI.
+Add 5-credit check/deduct in regenerate_image before calling Claude/OpenAI.
+Add 8-credit check/deduct in set_high_res before calling Claude/OpenAI.
+Add 10-credit check/deduct in generate_video before ffmpeg/Cloudinary work starts.
+Add 2-credit check/deduct in generate_copy before calling Claude.
+Add 3-credit check/deduct in upload_listing auto mode before queueing Etsy upload.
+Add 3 credits per listing in bulk_queue. It should check the total required credits for all valid selected listings before queueing any, so partial queueing does not happen accidentally.
+
+backend/app/api/jobs.py:
+If these job endpoints remain user-facing, add credit logic to generate_listing and upload_listing. Because they currently do not process jobs, the safer immediate option is to either hide/remove them from frontend or make their credit behavior align with the real workers when workers are implemented.
+
+backend/app/api/analytics.py:
+Return credit_balance and optionally recent credit ledger in /analytics/dashboard and /analytics/usage.
+
+backend/app/api/dashboard.py:
+Add credit_balance to DashboardStats if /dashboard/stats remains supported.
+
+backend/app/api/settings.py:
+Return credit_balance in SettingsResponse if settings page should show it.
+
+backend/app/api/auth.py:
+Optionally initialize signup credits in register.
+
+backend/app/api/billing.py:
+Grant/reset credits on successful subscription events. Use webhook event IDs or subscription invoice IDs as idempotency keys so credits are not double-granted when Stripe retries webhooks.
+
+Backend schemas:
+backend/app/schemas/dashboard.py: add credit balance fields.
+backend/app/schemas/settings.py: add credit balance if settings displays it.
+backend/app/schemas/auth.py: add credit_balance if /auth/me should expose it.
+New backend/app/schemas/credits.py: define CreditBalanceResponse, CreditLedgerOut, and InsufficientCreditsDetail if returning structured errors.
+backend/app/schemas/listings.py: no major schema change required unless responses should return updated credit balance.
+
+Frontend files:
+lib/api.ts: preserve structured error detail. Current code only surfaces detail if it is a string. Insufficient credits should not become "Something went wrong".
+lib/types.ts: add credit_balance fields to User, AnalyticsDashboard, AnalyticsUsageResponse, SettingsResponse, or a new CreditsResponse.
+app/(dashboard)/dashboard/page.tsx: display credit balance and possibly low-credit warning.
+app/(dashboard)/settings/page.tsx: show credit balance and ledger/usage.
+components/NewListingForm.tsx: show credit costs for image actions and handle insufficient-credit error in generateImage, regenerateImage, generateHighRes, addAnotherImage.
+app/(dashboard)/new-listing/package/page.tsx: show/handle credit costs for generateVideo and generateCopy.
+app/(dashboard)/new-listing/upload/page.tsx: show/handle 3-credit upload cost.
+app/(dashboard)/bulk-listings/page.tsx: show total credit cost for selected listings and handle insufficient credits before queueing.
+components/UsageBar.tsx or new component: add a credit-balance display instead of trying to fit credits into monthly usage bars.
+components/Sidebar.tsx: optional credit badge in sidebar.
+
+Recommended new database fields/tables:
+Option A, recommended:
+users.credit_balance: Integer, default 0, not null.
+
+credit_ledger table:
+id: UUID primary key.
+user_id: UUID foreign key to users.id, indexed, required.
+action: Enum credit_action, required.
+credits_delta: Integer, required. Negative for spending, positive for grants/refunds.
+balance_after: Integer, required.
+listing_id: UUID nullable foreign key to listings.id, indexed.
+job_id: UUID nullable foreign key to jobs.id, indexed.
+idempotency_key: String(255), unique, nullable. Used for Stripe grants, retries, and avoiding double deductions.
+metadata_json: JSONB, default empty dict.
+created_at: DateTime(timezone=True), server default now.
+
+CreditAction enum suggested values:
+IMAGE_GENERATION.
+IMAGE_REGENERATION.
+HIGH_RES_IMAGE.
+VIDEO_GENERATION.
+COPY_GENERATION.
+ETSY_LISTING_UPLOAD.
+MONTHLY_PLAN_GRANT.
+MANUAL_ADJUSTMENT.
+REFUND.
+
+Optional fields:
+users.monthly_credit_grant_at or subscription_credit_period for monthly reset/grant tracking.
+credit_ledger.request_id for API idempotency if frontend sends an Idempotency-Key header.
+
+Endpoints needing credit deduction logic:
+POST /listings/generate-image: deduct 5 for standard generation, or 8 if using is_high_res true. The requested cost list separates image generation and high-res image, so if this endpoint accepts is_high_res true, charge 8, not 5.
+POST /listings/{listing_id}/regenerate-image: deduct 5.
+POST /listings/{listing_id}/set-high-res: deduct 8.
+POST /listings/{listing_id}/generate-video: deduct 10.
+POST /listings/{listing_id}/generate-copy: deduct 2.
+POST /listings/{listing_id}/upload in auto mode: deduct 3.
+POST /listings/bulk-queue: deduct 3 per listing, ideally all-or-nothing.
+POST /jobs/generate-listing: if kept, either reserve expected image/video/copy credits based on what the job will do, or do not expose it until workers can deduct credits at execution time.
+POST /jobs/upload-listing: if kept, deduct 3 or delegate to the same queue path as /listings/{id}/upload.
+
+Where credit balance should be checked:
+Check credit balance before the AI call or before queueing external work. Do not call Claude/OpenAI or start Etsy upload unless the user has enough credits.
+
+Recommended flow:
+1. Validate auth, ownership, plan restrictions, and input.
+2. Determine action cost.
+3. Atomically check and deduct or reserve credits before the provider call.
+4. Call the provider.
+5. If the provider call fails because of platform/provider error and the user received no value, refund credits in the same service layer with a REFUND ledger entry.
+6. If the user caused the failure with invalid input or missing credentials, decide product policy. I recommend no deduction when validation fails before the external call.
+
+How insufficient credits should be returned:
+Use HTTP 402 Payment Required. The response detail should be structured, not only a string.
+Recommended FastAPI detail:
+{
+  "code": "INSUFFICIENT_CREDITS",
+  "message": "Insufficient credits for image generation.",
+  "required": 5,
+  "balance": 2,
+  "action": "IMAGE_GENERATION"
+}
+
+Frontend handling:
+lib/api.ts should preserve this object on ApiError, for example by adding detail and code fields. UI components should detect code INSUFFICIENT_CREDITS and show a modal with balance, required credits, and an upgrade/top-up CTA.
+
+Important implementation detail:
+Credit deduction must be atomic. Do not do "read balance, then write balance" without locking. Use a transaction with SELECT ... FOR UPDATE on the user row or an atomic UPDATE users SET credit_balance = credit_balance - cost WHERE id = :id AND credit_balance >= :cost RETURNING credit_balance.
+
+SECTION 12 - RECOMMENDED NEXT STEPS
+
+Step 1:
+Decide the credit policy before coding. Define whether credits reset monthly, roll over, can be purchased separately, are granted by subscription plan, and what happens on provider failure. This is needed because billing/webhook behavior depends on it.
+
+Step 2:
+Add database support. Create users.credit_balance and credit_ledger with CreditAction enum and idempotency keys. Add Alembic migration and export models.
+
+Step 3:
+Build backend credit_service.py. Implement atomic deduct, refund, grant, get balance, ledger writes, and a typed insufficient-credit exception.
+
+Step 4:
+Add a FastAPI exception handler or helper so insufficient credits always return HTTP 402 with the same structured detail.
+
+Step 5:
+Wire credits into listings.py for all requested paid actions:
+generate-image, regenerate-image, set-high-res, generate-video, generate-copy, upload, and bulk-queue. For bulk queue, pre-validate and deduct the full total before queueing.
+
+Step 6:
+Decide what to do with jobs.py. Either remove/hide unused job endpoints, or make them call the same service paths/queue paths so credits and execution behavior are consistent.
+
+Step 7:
+Wire Stripe and registration credit grants. Add idempotent monthly grants from webhook events and optional signup credits in auth.register.
+
+Step 8:
+Update schemas and frontend types to expose credit_balance and structured credit errors.
+
+Step 9:
+Update lib/api.ts to preserve non-string error detail and code values. This is required before the frontend can show good insufficient-credit messages.
+
+Step 10:
+Update the frontend workflow UI. Show credit balance on dashboard/settings/sidebar, show costs near generation/upload buttons, and show a clear insufficient-credit modal when HTTP 402 is returned.
+
+Step 11:
+Keep existing usage tracking temporarily for analytics, but stop using it as the source of financial enforcement. Credits should become the enforcement source. Usage counts can remain useful for dashboard reporting.
+
+Step 12:
+Add tests before launch. Minimum backend tests should cover auth, credit deduction/refund, insufficient credits, image regeneration/high-res/copy credit enforcement, bulk queue all-or-nothing behavior, Stripe webhook idempotency, and listing ownership checks.
+
+Other improvements recommended before launch:
+Replace AES-CBC secret encryption with an authenticated encryption scheme such as AES-GCM or Fernet.
+Add CSRF protection for cookie-authenticated mutation endpoints.
+Set COOKIE_SECURE=true in production and verify COOKIE_DOMAIN for split frontend/backend domains.
+Add backend Sentry or equivalent error tracking.
+Disable /docs and /redoc in production if public API docs are not intended.
+Fix account deletion so it cancels Stripe subscription and optionally revokes/deletes Etsy/Claude credentials.
+Make queueing durable by requiring Redis/RQ or another worker system in production. Do not rely on the in-memory queue.
+Fix plan-limit inconsistencies, especially regenerate-image, set-high-res, generate-copy, jobs/analyze-shop, and jobs/upload-listing.
+Update UI copy from GPT-4o to gpt-image-1 or intentionally change backend model usage.
+Fix the mojibake celebration text in app/(dashboard)/new-listing/upload/page.tsx:189.
+Add an Etsy disconnect/reconnect management endpoint.
+Add a Claude key remove/update/test flow that never reveals the key and handles decrypt failures cleanly.
+Make usage/credit reporting consistent across /dashboard/stats, /analytics/dashboard, and /analytics/usage.
+Consider idempotency keys for expensive frontend actions to avoid double charges on retry/double click.

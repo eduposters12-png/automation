@@ -5,7 +5,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    database_url: str = Field(alias="DATABASE_URL")
+    # PostgreSQL: postgresql+psycopg://postgres:admin123@localhost:5432/listifyai
+    database_url: str = Field(default="sqlite+aiosqlite:///./listifyai.db", alias="DATABASE_URL")
     jwt_secret: str = Field(alias="JWT_SECRET")
     frontend_url: AnyHttpUrl = Field(alias="FRONTEND_URL")
     backend_url: AnyHttpUrl = Field(alias="BACKEND_URL")

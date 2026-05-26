@@ -44,6 +44,11 @@ class BulkQueueRequest(BaseModel):
     disclaimer_accepted: bool = False
 
 
+class MultiPageCreateRequest(BaseModel):
+    product_idea: str = Field(min_length=5, max_length=500)
+    style_notes: str | None = Field(default="")
+
+
 class ImageGenerationResponse(BaseModel):
     listing_id: UUID
     image_url: str
@@ -90,6 +95,7 @@ class ListingPackageResponse(BaseModel):
     listing_id: UUID
     image_urls: list[str]
     primary_image_url: str | None
+    pdf_url: str | None = None
     video_url: str | None
     title: str | None
     description: str | None
@@ -125,3 +131,26 @@ class PaginatedListingsResponse(BaseModel):
 
 class BulkQueueResponse(BaseModel):
     queued_count: int
+
+
+class MultiPageCreateResponse(BaseModel):
+    listing_id: str
+    status: str
+
+
+class MultiPageStatusResponse(BaseModel):
+    listing_id: str
+    status: str
+    total_pages_planned: int | None
+    pages_completed: int
+    progress_percent: int
+    page_images: list
+    pdf_url: str | None
+    error_message: str | None
+
+
+class PagePlanResponse(BaseModel):
+    page_plan: dict | None
+    total_pages: int | None
+    reasoning: str | None
+    pages: list | None

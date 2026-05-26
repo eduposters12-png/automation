@@ -31,12 +31,18 @@ from backend.app.schemas.listings import (
     ListingPackageResponse,
     ListingUploadRequest,
     ListingUploadResponse,
+    MultiPageCreateRequest,
+    MultiPageCreateResponse,
+    MultiPageStatusResponse,
+    PagePlanResponse,
     PaginatedListingsResponse,
     RegenerateImageRequest,
     RegenerateImageResponse,
     SuccessResponse
 )
 from backend.app.services.copy_service import CopyGenerationError, CopyJSONParseError, generate_listing_copy
+from backend.app.services import credit_service
+from backend.app.services import multi_page_service
 from backend.app.services.image_review_service import choose_image_prompt_and_size, review_image
 from backend.app.services.image_service import (
     CloudinaryUploadError,
@@ -120,6 +126,14 @@ def _require_video_generation_allowed(current_user: User) -> None:
         )
 
 
+def _require_multi_page_allowed(current_user: User) -> None:
+    if current_user.plan == Plan.FREE:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Upgrade your plan to create multi-page products."
+        )
+
+
 def _require_usage_allowed(current_user: User, action: UsageAction, db: Session) -> None:
     limit = check_plan_limit(current_user.id, action, db)
     if not limit["allowed"]:
@@ -137,6 +151,8 @@ def _require_etsy_connection(shop: Shop) -> None:
 def _require_upload_ready(listing: Listing) -> None:
     if not listing.title or not listing.description or not (listing.image_urls or []):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Listing package is incomplete.")
+    if listing.is_multi_page and not listing.pdf_url:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Multi-page PDF is not ready.")
 
 
 def _product_ideas(shop: Shop) -> list[dict[str, Any]]:
@@ -390,13 +406,19 @@ async def generate_image(
         if payload.estimated_price is not None:
             listing.price = payload.estimated_price
 
-    image_url, prompt, claude_review = await _generate_reviewed_image(
-        product_idea=product_idea,
-        shop_style=_shop_style(shop, payload.style_notes),
-        claude_api_key=claude_api_key,
-        listing_id=listing.id,
-        is_high_res=payload.is_high_res
-    )
+    action = "HIGH_RES_IMAGE" if payload.is_high_res else "IMAGE_GENERATION"
+    credit_service.deduct_credits(db, current_user.id, action, listing_id=listing.id)
+    try:
+        image_url, prompt, claude_review = await _generate_reviewed_image(
+            product_idea=product_idea,
+            shop_style=_shop_style(shop, payload.style_notes),
+            claude_api_key=claude_api_key,
+            listing_id=listing.id,
+            is_high_res=payload.is_high_res
+        )
+    except HTTPException:
+        credit_service.refund_credits(db, current_user.id, action, listing_id=listing.id)
+        raise
     _append_image_url(listing, image_url)
     listing.image_prompt = prompt
     listing.claude_review_json = claude_review
@@ -434,14 +456,20 @@ async def regenerate_image(
     original_prompt = listing.image_prompt or build_image_prompt(product_idea, _shop_style(shop, None), False)
     improved_prompt = (listing.claude_review_json or {}).get("improvedPrompt") if listing.claude_review_json else None
     prompt = str(improved_prompt or original_prompt) if payload.use_improved_prompt else original_prompt
-    image_url, prompt, claude_review = await _generate_reviewed_image(
-        product_idea=product_idea,
-        shop_style=_shop_style(shop, None),
-        claude_api_key=claude_api_key,
-        listing_id=listing.id,
-        is_high_res=False,
-        base_prompt=prompt
-    )
+    action = "IMAGE_REGENERATION"
+    credit_service.deduct_credits(db, current_user.id, action, listing_id=listing.id)
+    try:
+        image_url, prompt, claude_review = await _generate_reviewed_image(
+            product_idea=product_idea,
+            shop_style=_shop_style(shop, None),
+            claude_api_key=claude_api_key,
+            listing_id=listing.id,
+            is_high_res=False,
+            base_prompt=prompt
+        )
+    except HTTPException:
+        credit_service.refund_credits(db, current_user.id, action, listing_id=listing.id)
+        raise
     _append_image_url(listing, image_url, cap=10)
     listing.image_prompt = prompt
     listing.claude_review_json = claude_review
@@ -471,14 +499,20 @@ async def set_high_res(
         "targetKeywords": listing.tags or [],
         "suggestedPrice": float(listing.price) if listing.price is not None else None
     }
-    image_url, prompt, claude_review = await _generate_reviewed_image(
-        product_idea=product_idea,
-        shop_style=_shop_style(shop, None),
-        claude_api_key=claude_api_key,
-        listing_id=listing.id,
-        is_high_res=True,
-        base_prompt=listing.image_prompt
-    )
+    action = "HIGH_RES_IMAGE"
+    credit_service.deduct_credits(db, current_user.id, action, listing_id=listing.id)
+    try:
+        image_url, prompt, claude_review = await _generate_reviewed_image(
+            product_idea=product_idea,
+            shop_style=_shop_style(shop, None),
+            claude_api_key=claude_api_key,
+            listing_id=listing.id,
+            is_high_res=True,
+            base_prompt=listing.image_prompt
+        )
+    except HTTPException:
+        credit_service.refund_credits(db, current_user.id, action, listing_id=listing.id)
+        raise
     _append_image_url(listing, image_url, cap=10)
     listing.image_prompt = prompt
     listing.claude_review_json = claude_review
@@ -537,6 +571,8 @@ async def generate_video(
     image_urls = _video_image_urls(listing)
     product_idea = _listing_product_idea(shop, listing)
 
+    action = "VIDEO_GENERATION"
+    credit_service.deduct_credits(db, current_user.id, action, listing_id=listing.id)
     try:
         video_bytes = await generate_listing_video(
             image_urls=image_urls,
@@ -544,6 +580,7 @@ async def generate_video(
             shop_style=_shop_style(shop, None)
         )
     except VideoGenerationError as exc:
+        credit_service.refund_credits(db, current_user.id, action, listing_id=listing.id)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Video generation failed. Please try again."
@@ -552,6 +589,7 @@ async def generate_video(
     try:
         video_url = await upload_video(video_bytes, str(listing.id))
     except VideoUploadError as exc:
+        credit_service.refund_credits(db, current_user.id, action, listing_id=listing.id)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Video generation failed. Please try again."
@@ -575,9 +613,17 @@ async def generate_copy(
     listing = _owned_listing(db, shop, listing_id)
     product_idea = _listing_product_idea(shop, listing)
 
+    action = "COPY_GENERATION"
+    credit_service.deduct_credits(db, current_user.id, action, listing_id=listing.id)
     try:
         copy = await generate_listing_copy(product_idea, _shop_analysis(shop), claude_api_key)
-    except (CopyGenerationError, CopyJSONParseError) as exc:
+    except CopyGenerationError as exc:
+        credit_service.refund_credits(db, current_user.id, action, listing_id=listing.id)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Copy generation failed. Check your Claude API key in settings."
+        ) from exc
+    except CopyJSONParseError as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Copy generation failed. Check your Claude API key in settings."
@@ -639,6 +685,7 @@ def get_package(
         listing_id=listing.id,
         image_urls=list(listing.image_urls or []),
         primary_image_url=listing.primary_image_url,
+        pdf_url=listing.pdf_url,
         video_url=listing.video_url,
         title=listing.title,
         description=listing.description,
@@ -687,6 +734,7 @@ async def upload_listing(
     _require_etsy_connection(shop)
     _require_upload_ready(listing)
     _require_usage_allowed(current_user, UsageAction.LISTING_UPLOADED, db)
+    credit_service.deduct_credits(db, current_user.id, "ETSY_LISTING_UPLOAD", listing_id=listing.id)
     listing.status = ListingStatus.QUEUED
     listing.error_message = None
     db.add(listing)
@@ -773,17 +821,143 @@ async def bulk_queue(
     shop = _require_shop(current_user, db)
     _require_etsy_connection(shop)
 
+    listings_to_queue: list[Listing] = []
     queued_count = 0
-    for index, listing_id in enumerate(payload.listing_ids):
+    for listing_id in payload.listing_ids:
         listing = _owned_listing(db, shop, listing_id)
         _require_upload_ready(listing)
         _require_usage_allowed(current_user, UsageAction.LISTING_UPLOADED, db)
-        listing.status = ListingStatus.QUEUED
-        listing.error_message = None
-        db.add(listing)
+        listings_to_queue.append(listing)
+
+    total_cost = credit_service.CREDIT_COSTS["ETSY_LISTING_UPLOAD"] * len(listings_to_queue)
+    current_balance = credit_service.get_balance(db, current_user.id)
+    if current_balance < total_cost:
+        raise credit_service.insufficient_credits_error("ETSY_LISTING_UPLOAD", total_cost, current_balance)
+
+    try:
+        for listing in listings_to_queue:
+            credit_service._deduct_credits_no_commit(  # noqa: SLF001
+                db,
+                current_user.id,
+                "ETSY_LISTING_UPLOAD",
+                listing_id=listing.id
+            )
+            listing.status = ListingStatus.QUEUED
+            listing.error_message = None
+            db.add(listing)
         db.commit()
+    except Exception:
+        db.rollback()
+        raise
+
+    for index, listing in enumerate(listings_to_queue):
         await enqueue_upload_job(listing.id, current_user.id, shop.id, delay_seconds=index * 60)
         track_usage(current_user.id, UsageAction.LISTING_UPLOADED, db)
         queued_count += 1
 
     return BulkQueueResponse(queued_count=queued_count)
+
+
+@router.post("/create-multi-page", response_model=MultiPageCreateResponse)
+def create_multi_page_listing(
+    payload: MultiPageCreateRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+) -> MultiPageCreateResponse:
+    _require_multi_page_allowed(current_user)
+    shop = _require_shop(current_user, db)
+    if not shop.claude_api_key_encrypted:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Add your Claude API key first")
+
+    listing = Listing(
+        shop_id=shop.id,
+        is_multi_page=True,
+        title=payload.product_idea.strip()[:140],
+        description=(payload.style_notes or "").strip(),
+        status=ListingStatus.DRAFT,
+        is_bundle=True,
+        image_urls=[],
+        tags=[],
+        page_images_json=[]
+    )
+    db.add(listing)
+    db.commit()
+    db.refresh(listing)
+    return MultiPageCreateResponse(listing_id=str(listing.id), status=listing.status.value)
+
+
+@router.post("/{listing_id}/start-multi-page")
+async def start_multi_page_generation(
+    listing_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+) -> dict[str, Any]:
+    _require_multi_page_allowed(current_user)
+    shop = _require_shop(current_user, db)
+    listing = _owned_listing(db, shop, listing_id)
+    if not listing.is_multi_page:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Listing is not a multi-page product.")
+    if listing.status not in {ListingStatus.DRAFT, ListingStatus.FAILED}:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Multi-page generation has already started.")
+
+    listing.status = ListingStatus.QUEUED
+    listing.pages_completed = 0
+    listing.error_message = None
+    db.add(listing)
+    db.commit()
+
+    result = await multi_page_service.run_multi_page_generation(str(listing.id), db)
+    return {
+        "success": result["success"],
+        "total_pages": result["total_pages"],
+        "pdf_url": result["pdf_url"]
+    }
+
+
+@router.get("/{listing_id}/multi-page-status", response_model=MultiPageStatusResponse)
+def get_multi_page_status(
+    listing_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+) -> MultiPageStatusResponse:
+    shop = _require_shop(current_user, db)
+    listing = _owned_listing(db, shop, listing_id)
+    total_pages = listing.total_pages_planned
+    pages_completed = int(listing.pages_completed or 0)
+    progress_percent = int((pages_completed / total_pages) * 100) if total_pages else 0
+    page_images = [
+        {
+            "page_number": image.get("page_number"),
+            "image_url": image.get("image_url"),
+            "approved": image.get("approved", True)
+        }
+        for image in (listing.page_images_json or [])
+        if isinstance(image, dict)
+    ]
+    return MultiPageStatusResponse(
+        listing_id=str(listing.id),
+        status=listing.status.value,
+        total_pages_planned=total_pages,
+        pages_completed=pages_completed,
+        progress_percent=min(progress_percent, 100),
+        page_images=page_images,
+        pdf_url=listing.pdf_url,
+        error_message=listing.error_message
+    )
+
+
+@router.get("/{listing_id}/page-plan", response_model=PagePlanResponse)
+def get_multi_page_plan(
+    listing_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+) -> PagePlanResponse:
+    shop = _require_shop(current_user, db)
+    listing = _owned_listing(db, shop, listing_id)
+    page_plan = listing.page_plan_json if isinstance(listing.page_plan_json, dict) else None
+    return PagePlanResponse(
+        page_plan=page_plan,
+        total_pages=page_plan.get("total_pages") if page_plan else None,
+        reasoning=page_plan.get("reasoning") if page_plan else None,
+        pages=page_plan.get("pages") if page_plan else None
+    )

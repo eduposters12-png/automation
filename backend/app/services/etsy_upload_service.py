@@ -145,6 +145,21 @@ async def upload_listing_video(etsy_listing_id: str, video_url: str, access_toke
     )
 
 
+async def upload_listing_file(etsy_listing_id: str, file_url: str, access_token: str, shop_id: str) -> None:
+    file_bytes, content_type = await _download_file(file_url)
+    files = {
+        "file": ("digital-product.pdf", file_bytes, content_type if content_type == "application/pdf" else "application/pdf")
+    }
+    data = {"name": "digital-product.pdf"}
+    await _etsy_request(
+        "POST",
+        f"/shops/{shop_id}/listings/{etsy_listing_id}/files",
+        access_token,
+        data=data,
+        files=files
+    )
+
+
 async def publish_listing(etsy_listing_id: str, access_token: str, shop_id: str) -> None:
     await _etsy_request(
         "PATCH",
@@ -160,6 +175,8 @@ async def full_upload_flow(listing: dict[str, Any], access_token: str, shop_id: 
     await upload_listing_images(etsy_listing_id, listing.get("image_urls") or [], access_token, shop_id)
     if listing.get("video_url"):
         await upload_listing_video(etsy_listing_id, str(listing["video_url"]), access_token, shop_id)
+    if listing.get("pdf_url"):
+        await upload_listing_file(etsy_listing_id, str(listing["pdf_url"]), access_token, shop_id)
     await publish_listing(etsy_listing_id, access_token, shop_id)
     return etsy_listing_id
 
@@ -190,6 +207,7 @@ def listing_to_upload_dict(listing: Listing) -> dict[str, Any]:
         "tags": list(listing.tags or []),
         "type": "download",
         "image_urls": image_urls,
+        "pdf_url": listing.pdf_url,
         "video_url": listing.video_url
     }
 

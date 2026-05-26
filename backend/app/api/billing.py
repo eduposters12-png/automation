@@ -11,6 +11,7 @@ from backend.app.core.deps import get_current_user
 from backend.app.core.plans import normalize_plan
 from backend.app.db.session import get_db
 from backend.app.models.user import Plan, User
+from backend.app.services import credit_service
 from backend.app.services.stripe import plan_for_price_id, price_id_for_plan
 
 router = APIRouter(prefix="/stripe", tags=["stripe"])
@@ -99,6 +100,23 @@ def _subscription_plan(subscription: dict) -> Plan:
     return plan_for_price_id(price_id)
 
 
+def _invoice_plan(invoice: dict) -> Plan:
+    lines = invoice.get("lines", {}).get("data", [])
+    if not lines:
+        return Plan.FREE
+    price_id = lines[0].get("price", {}).get("id")
+    return plan_for_price_id(price_id)
+
+
+def _invoice_period_start(invoice: dict) -> int:
+    lines = invoice.get("lines", {}).get("data", [])
+    if lines:
+        period_start = lines[0].get("period", {}).get("start")
+        if period_start:
+            return int(period_start)
+    return int(invoice.get("period_start") or invoice.get("created") or 0)
+
+
 @router.post("/webhook")
 async def stripe_webhook(request: Request, db: Session = Depends(get_db)) -> dict[str, bool]:
     settings = get_settings()
@@ -141,6 +159,21 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)) -> dic
             user.stripe_subscription_id = obj.get("id") or user.stripe_subscription_id
             db.add(user)
             db.commit()
+            if event_type == "customer.subscription.created" and user.plan != Plan.FREE:
+                credit_service.grant_plan_credits(
+                    db,
+                    user.id,
+                    user.plan.value,
+                    int(obj.get("current_period_start") or obj.get("created") or 0)
+                )
+
+    if event_type == "invoice.payment_succeeded":
+        customer_id = obj.get("customer")
+        user = db.scalar(select(User).where(User.stripe_customer_id == customer_id))
+        if user:
+            plan = _invoice_plan(obj)
+            if plan != Plan.FREE:
+                credit_service.grant_plan_credits(db, user.id, plan.value, _invoice_period_start(obj))
 
     if event_type == "customer.subscription.deleted":
         customer_id = obj.get("customer")

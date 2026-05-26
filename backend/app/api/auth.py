@@ -10,6 +10,7 @@ from backend.app.core.security import create_access_token, hash_password, verify
 from backend.app.db.session import get_db
 from backend.app.models.user import User
 from backend.app.schemas.auth import AuthResponse, ChangePasswordRequest, LoginRequest, ProfileUpdateRequest, RegisterRequest, UserOut
+from backend.app.services.credit_service import grant_signup_credits
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -46,6 +47,8 @@ def register(payload: RegisterRequest, response: Response, db: Session = Depends
     )
     db.add(user)
     db.commit()
+    db.refresh(user)
+    grant_signup_credits(db, user.id)
     db.refresh(user)
     _set_auth_cookie(response, user)
     return AuthResponse(user=UserOut.model_validate(user))

@@ -3,6 +3,7 @@
 import {
   BarChart3,
   CreditCard,
+  FileText,
   Home,
   ListChecks,
   LogOut,
@@ -14,6 +15,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import toast from "react-hot-toast";
 
+import { CreditBalance } from "@/components/CreditBalance";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { apiFetch } from "@/lib/api";
@@ -24,6 +26,7 @@ const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: Home },
   { href: "/shop-analysis", label: "Shop Analysis", icon: BarChart3 },
   { href: "/new-listing", label: "New Listing", icon: PlusCircle },
+  { href: "/new-listing/multi-page", label: "Multi-Page Product", icon: FileText },
   { href: "/my-listings", label: "My Listings", icon: ListChecks },
   { href: "/settings", label: "Settings", icon: Settings },
   { href: "/upgrade", label: "Upgrade", icon: CreditCard }
@@ -81,23 +84,26 @@ export function Sidebar({ user }: { user: User }) {
           </div>
         </div>
         {renderNavigation()}
-        <div className="mt-auto rounded-lg border border-white/10 bg-white/5 p-4">
-          <div className="mb-3 flex items-center justify-between gap-3">
-            <div className="min-w-0">
-              <p className="truncate text-sm font-semibold">{user.name}</p>
-              <p className="truncate text-xs text-gray-400">{user.email}</p>
+        <div className="mt-auto space-y-3">
+          <CreditBalance />
+          <div className="rounded-lg border border-white/10 bg-white/5 p-4">
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold">{user.name}</p>
+                <p className="truncate text-xs text-gray-400">{user.email}</p>
+              </div>
+              <Badge tone="indigo">{user.plan}</Badge>
             </div>
-            <Badge tone="indigo">{user.plan}</Badge>
+            <Button
+              type="button"
+              variant="ghost"
+              className="w-full justify-start text-gray-200 hover:bg-white/10 hover:text-white"
+              icon={<LogOut className="h-4 w-4" aria-hidden="true" />}
+              onClick={logout}
+            >
+              Logout
+            </Button>
           </div>
-          <Button
-            type="button"
-            variant="ghost"
-            className="w-full justify-start text-gray-200 hover:bg-white/10 hover:text-white"
-            icon={<LogOut className="h-4 w-4" aria-hidden="true" />}
-            onClick={logout}
-          >
-            Logout
-          </Button>
         </div>
       </aside>
 

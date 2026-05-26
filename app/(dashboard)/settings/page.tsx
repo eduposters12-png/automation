@@ -1,7 +1,7 @@
 "use client";
 
 import * as Sentry from "@sentry/nextjs";
-import { CheckCircle2, KeyRound, Loader2, Trash2, XCircle } from "lucide-react";
+import { CheckCircle2, Coins, KeyRound, Loader2, Trash2, XCircle } from "lucide-react";
 import { FormEvent, useEffect, useState } from "react";
 import toast from "react-hot-toast";
 
@@ -11,13 +11,20 @@ import { Card } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
 import { apiFetch } from "@/lib/api";
-import type { AnalyticsUsageResponse, AuthResponse, SettingsResponse, TestConnectionResponse } from "@/lib/types";
+import type {
+  AnalyticsUsageResponse,
+  AuthResponse,
+  CreditBalance,
+  CreditHistoryEntry,
+  SettingsResponse,
+  TestConnectionResponse
+} from "@/lib/types";
 
 const featureText = {
-  FREE: ["Explore onboarding", "No generation credits"],
-  BASIC: ["20 images/month", "20 uploads/month"],
-  PRO: ["100 images/month", "50 videos/month", "100 uploads/month"],
-  AGENCY: ["500 images/month", "200 videos/month", "500 uploads/month"]
+  FREE: ["20 signup credits", "Explore onboarding"],
+  BASIC: ["150 credits/month", "20 images/month", "20 uploads/month"],
+  PRO: ["600 credits/month", "100 images/month", "50 videos/month", "100 uploads/month"],
+  AGENCY: ["2000 credits/month", "500 images/month", "200 videos/month", "500 uploads/month"]
 };
 
 function captureUiError(error: unknown) {
@@ -27,6 +34,8 @@ function captureUiError(error: unknown) {
 export default function SettingsPage() {
   const [settings, setSettings] = useState<SettingsResponse | null>(null);
   const [usage, setUsage] = useState<AnalyticsUsageResponse | null>(null);
+  const [credits, setCredits] = useState<CreditBalance | null>(null);
+  const [creditHistory, setCreditHistory] = useState<CreditHistoryEntry[]>([]);
   const [claudeKey, setClaudeKey] = useState("");
   const [name, setName] = useState("");
   const [oldPassword, setOldPassword] = useState("");
@@ -46,6 +55,12 @@ export default function SettingsPage() {
       setSettings(settingsResponse);
       setUsage(usageResponse);
       setName(settingsResponse.name);
+      const [creditResponse, historyResponse] = await Promise.all([
+        apiFetch<CreditBalance>("/credits/balance"),
+        apiFetch<CreditHistoryEntry[]>("/credits/history?limit=10")
+      ]);
+      setCredits(creditResponse);
+      setCreditHistory(historyResponse);
     } catch (error) {
       captureUiError(error);
       toast.error("Could not load settings");
@@ -107,6 +122,16 @@ export default function SettingsPage() {
     } catch (error) {
       captureUiError(error);
       toast.error(error instanceof Error ? error.message : "Could not cancel subscription");
+    }
+  }
+
+  async function loadFullCreditHistory() {
+    try {
+      const response = await apiFetch<CreditHistoryEntry[]>("/credits/history?limit=100");
+      setCreditHistory(response);
+    } catch (error) {
+      captureUiError(error);
+      toast.error("Could not load credit history");
     }
   }
 
@@ -196,6 +221,32 @@ export default function SettingsPage() {
       </Card>
 
       <Card className="space-y-5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h2 className="text-base font-semibold text-gray-950">Credits & Usage</h2>
+          <div className="inline-flex items-center gap-2 rounded-md bg-indigo-50 px-3 py-2 text-sm font-semibold text-indigo-700">
+            <Coins className="h-4 w-4" />
+            {credits?.credit_balance ?? 0} credits
+          </div>
+        </div>
+        <div className="divide-y divide-gray-100 rounded-lg border border-gray-100">
+          {creditHistory.length ? creditHistory.map((entry) => (
+            <div key={`${entry.created_at}-${entry.action}-${entry.balance_after}`} className="grid gap-2 px-4 py-3 text-sm sm:grid-cols-[minmax(0,1fr)_auto_auto] sm:items-center">
+              <span className="font-medium text-gray-800">{formatCreditAction(entry.action)}</span>
+              <span className={entry.credits_delta < 0 ? "font-semibold text-red-600" : "font-semibold text-emerald-700"}>
+                {entry.credits_delta > 0 ? `+${entry.credits_delta}` : entry.credits_delta}
+              </span>
+              <span className="text-gray-500">{new Date(entry.created_at).toLocaleDateString()}</span>
+            </div>
+          )) : (
+            <div className="px-4 py-6 text-sm text-gray-500">No credit transactions yet.</div>
+          )}
+        </div>
+        <Button type="button" variant="secondary" onClick={loadFullCreditHistory}>
+          View full history
+        </Button>
+      </Card>
+
+      <Card className="space-y-5">
         <h2 className="text-base font-semibold text-gray-950">Account</h2>
         <form className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto]" onSubmit={updateProfile}>
           <Input label="Display name" name="name" value={name} onChange={(event) => setName(event.target.value)} />
@@ -218,4 +269,12 @@ export default function SettingsPage() {
       </Modal>
     </div>
   );
+}
+
+function formatCreditAction(action: string) {
+  return action
+    .toLowerCase()
+    .split("_")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
 }

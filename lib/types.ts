@@ -5,6 +5,7 @@ export type User = {
   email: string;
   name: string;
   plan: Plan;
+  credit_balance: number;
   created_at: string;
 };
 
@@ -73,6 +74,19 @@ export type AnalyticsUsageResponse = {
   usage_with_limits: Record<UsageAction, UsageWithLimit>;
   plan: Plan;
 };
+
+export interface CreditBalance {
+  credit_balance: number;
+  plan: string;
+}
+
+export interface CreditHistoryEntry {
+  action: string;
+  credits_delta: number;
+  balance_after: number;
+  created_at: string;
+  listing_id: string | null;
+}
 
 export type TestConnectionResponse = {
   success: boolean;
@@ -172,6 +186,7 @@ export type ListingPackage = {
   listing_id: string;
   image_urls: string[];
   primary_image_url: string | null;
+  pdf_url: string | null;
   video_url: string | null;
   title: string | null;
   description: string | null;

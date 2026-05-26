@@ -24,7 +24,8 @@ import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
-import { apiFetch } from "@/lib/api";
+import { InsufficientCreditsModal } from "@/components/InsufficientCreditsModal";
+import { ApiError, apiFetch } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import type {
   ApproveImageResponse,
@@ -91,6 +92,7 @@ export function NewListingForm({
   const [activeLoadingStep, setActiveLoadingStep] = useState(0);
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [upgradeModal, setUpgradeModal] = useState<{ title: string; message: string } | null>(null);
+  const [insufficientCredits, setInsufficientCredits] = useState<{ required: number; balance: number; action: string } | null>(null);
 
   const maxImages = useMemo(() => imageLimit(plan), [plan]);
   const imageWorking = ["generate", "regenerate", "improve", "high-res", "add"].includes(loadingAction || "");
@@ -152,6 +154,14 @@ export function NewListingForm({
   }
 
   function handleApiError(error: unknown, retry: () => Promise<void>, fallback: string) {
+    if (error instanceof ApiError && error.code === "INSUFFICIENT_CREDITS") {
+      setInsufficientCredits({
+        required: Number(error.detail?.required || 0),
+        balance: Number(error.detail?.balance || 0),
+        action: String(error.detail?.action || "")
+      });
+      return;
+    }
     const message = error instanceof Error ? error.message : fallback;
     if (message.includes("Upgrade") || message.includes("Pro plan") || message.includes("limit")) {
       showPlanModal("Upgrade required", message);
@@ -405,9 +415,12 @@ export function NewListingForm({
               value={estimatedPrice}
               onChange={(event) => setEstimatedPrice(event.target.value)}
             />
-            <Button type="submit" loading={loadingAction === "generate"} icon={<Sparkles className="h-4 w-4" />}>
-              Generate Image
-            </Button>
+            <div className="flex flex-wrap items-center gap-3">
+              <Button type="submit" loading={loadingAction === "generate"} icon={<Sparkles className="h-4 w-4" />}>
+                Generate Image
+              </Button>
+              <span className="text-sm font-medium text-gray-500">(costs 5 credits)</span>
+            </div>
           </form>
         </Card>
       ) : null}
@@ -441,12 +454,15 @@ export function NewListingForm({
                   <Button type="button" variant="secondary" onClick={() => regenerateImage(false)} icon={<RefreshCw className="h-4 w-4" />}>
                     Regenerate
                   </Button>
+                  <span className="self-center text-xs font-semibold text-gray-500">(5 credits)</span>
                   <Button type="button" variant="secondary" onClick={() => regenerateImage(true)} icon={<Wand2 className="h-4 w-4" />}>
                     Apply Claude&apos;s Suggestion
                   </Button>
+                  <span className="self-center text-xs font-semibold text-gray-500">(5 credits)</span>
                   <Button type="button" variant="secondary" onClick={generateHighRes} icon={<ArrowUp className="h-4 w-4" />}>
                     High Resolution
                   </Button>
+                  <span className="self-center text-xs font-semibold text-gray-500">(8 credits)</span>
                 </div>
               </div>
             </Card>
@@ -493,6 +509,7 @@ export function NewListingForm({
             <Button type="button" onClick={addAnotherImage} loading={loadingAction === "add"} icon={<Plus className="h-4 w-4" />}>
               Add Another Image
             </Button>
+            <span className="text-sm font-medium text-gray-500">(costs 5 credits)</span>
           </Card>
 
           {loadingAction === "add" ? (
@@ -563,6 +580,13 @@ export function NewListingForm({
           </Button>
         </div>
       </Modal>
+      <InsufficientCreditsModal
+        isOpen={Boolean(insufficientCredits)}
+        onClose={() => setInsufficientCredits(null)}
+        required={insufficientCredits?.required || 0}
+        balance={insufficientCredits?.balance || 0}
+        action={insufficientCredits?.action || ""}
+      />
     </div>
   );
 }

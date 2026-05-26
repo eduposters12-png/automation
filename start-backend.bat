@@ -1,5 +1,9 @@
 @echo off
 echo Starting ListifyAI Backend...
 cd backend
+set PYTHONPATH=..;%PYTHONPATH%
 call venv\Scripts\activate
+echo Running migrations...
+alembic -c alembic.ini upgrade head
+echo Starting server...
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
