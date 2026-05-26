@@ -5,8 +5,8 @@ import type {
   AuthResponse,
   DashboardStats,
   Job,
-  Listing,
   OnboardingStatus,
+  PaginatedListingsResponse,
   SettingsResponse
 } from "@/lib/types";
 
@@ -40,7 +40,7 @@ export function getSettings() {
 }
 
 export function getListings() {
-  return serverApiFetch<Listing[]>("/listings");
+  return serverApiFetch<PaginatedListingsResponse>("/listings");
 }
 
 export function getJobs() {

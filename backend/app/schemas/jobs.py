@@ -38,12 +38,17 @@ class ListingOut(BaseModel):
     id: UUID
     status: ListingStatus
     image_urls: list[str]
+    primary_image_url: str | None
+    image_prompt: str | None
+    claude_review_json: dict | None
     video_url: str | None
     title: str | None
     description: str | None
     tags: list[str]
     price: Decimal | None
+    is_bundle: bool
     etsy_listing_id: str | None
+    error_message: str | None
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)

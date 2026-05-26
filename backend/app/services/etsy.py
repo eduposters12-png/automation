@@ -14,7 +14,7 @@ from backend.app.models.shop import Shop
 
 ETSY_AUTHORIZE_URL = "https://www.etsy.com/oauth/connect"
 ETSY_TOKEN_URL = "https://api.etsy.com/v3/public/oauth/token"
-ETSY_API_BASE_URL = "https://api.etsy.com/v3/application"
+ETSY_API_BASE_URL = "https://openapi.etsy.com/v3/application"
 
 
 def _base64url(data: bytes) -> str:

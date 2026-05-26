@@ -84,19 +84,26 @@ def generate_listing(
     )
     db.add(listing)
     db.flush()
-    job = Job(
+    job_payload = {
+        "listing_id": str(listing.id),
+        "product_idea": payload.product_idea,
+        "target_price": str(payload.target_price) if payload.target_price is not None else None
+    }
+    image_job = Job(
         shop_id=shop.id,
         type=JobType.GENERATE_IMAGE,
-        payload_json={
-            "listing_id": str(listing.id),
-            "product_idea": payload.product_idea,
-            "target_price": str(payload.target_price) if payload.target_price is not None else None
-        }
+        payload_json=job_payload
     )
-    db.add(job)
+    video_job = Job(
+        shop_id=shop.id,
+        type=JobType.GENERATE_VIDEO,
+        payload_json=job_payload
+    )
+    db.add(image_job)
+    db.add(video_job)
     db.commit()
-    db.refresh(job)
-    return JobOut.model_validate(job)
+    db.refresh(image_job)
+    return JobOut.model_validate(image_job)
 
 
 @router.post("/upload-listing", response_model=JobOut, status_code=status.HTTP_201_CREATED)

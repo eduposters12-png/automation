@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useState } from "react";
+import Link from "next/link";
 import toast from "react-hot-toast";
 
 import { Button } from "@/components/ui/Button";
@@ -11,6 +12,7 @@ import type { SettingsResponse } from "@/lib/types";
 
 export function SettingsForm({ initialSettings }: { initialSettings: SettingsResponse }) {
   const [settings, setSettings] = useState(initialSettings);
+  const [claudeKey, setClaudeKey] = useState("");
   const [saving, setSaving] = useState(false);
   const [connecting, setConnecting] = useState(false);
 
@@ -41,7 +43,7 @@ export function SettingsForm({ initialSettings }: { initialSettings: SettingsRes
         }
       });
       setSettings(nextSettings);
-      event.currentTarget.reset();
+      setClaudeKey("");
       toast.success("Settings updated");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Could not update settings");
@@ -67,6 +69,8 @@ export function SettingsForm({ initialSettings }: { initialSettings: SettingsRes
             name="claude_api_key"
             type="password"
             autoComplete="off"
+            value={claudeKey}
+            onChange={(event) => setClaudeKey(event.target.value)}
             placeholder={settings.claude_key_added ? "Saved key is hidden" : "sk-ant-..."}
           />
           <Button type="submit" loading={saving}>
@@ -97,6 +101,12 @@ export function SettingsForm({ initialSettings }: { initialSettings: SettingsRes
         <Button type="button" variant="secondary" onClick={connectEtsy} loading={connecting} className="w-full">
           {settings.etsy_connected ? "Reconnect Etsy" : "Connect Etsy"}
         </Button>
+        <Link
+          href="/upgrade"
+          className="inline-flex min-h-10 w-full items-center justify-center rounded-md border border-gray-200 px-4 text-sm font-semibold text-gray-900 transition hover:bg-gray-50"
+        >
+          Change plan
+        </Link>
       </Card>
     </div>
   );

@@ -12,7 +12,8 @@ function statusTone(status: string): "gray" | "green" | "red" | "amber" {
 }
 
 export default async function ListingsPage() {
-  const listings = (await getListings()) || [];
+  const response = await getListings();
+  const listings = response?.listings || [];
 
   return (
     <div className="space-y-6">

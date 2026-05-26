@@ -12,10 +12,11 @@ export class ApiError extends Error {
 
 type ApiOptions = RequestInit & {
   json?: unknown;
+  responseType?: "json" | "blob";
 };
 
 export async function apiFetch<T>(path: string, options: ApiOptions = {}): Promise<T> {
-  const { json, headers, ...init } = options;
+  const { json, headers, responseType = "json", ...init } = options;
   const response = await fetch(`${API_URL}${path}`, {
     ...init,
     credentials: "include",
@@ -27,12 +28,17 @@ export async function apiFetch<T>(path: string, options: ApiOptions = {}): Promi
   });
 
   const contentType = response.headers.get("content-type");
-  const data = contentType?.includes("application/json") ? await response.json() : null;
-
+  const errorData = !response.ok && contentType?.includes("application/json") ? await response.json() : null;
   if (!response.ok) {
-    const detail = typeof data?.detail === "string" ? data.detail : "Something went wrong";
+    const detail = typeof errorData?.detail === "string" ? errorData.detail : "Something went wrong";
     throw new ApiError(detail, response.status);
   }
+
+  const data = responseType === "blob"
+    ? await response.blob()
+    : contentType?.includes("application/json")
+      ? await response.json()
+      : null;
 
   return data as T;
 }

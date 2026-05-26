@@ -39,7 +39,8 @@ def connect_etsy(
         "max_age": 600,
         "httponly": True,
         "secure": settings.cookie_secure,
-        "samesite": "lax"
+        "samesite": "lax",
+        "domain": settings.cookie_domain
     }
     response.set_cookie(STATE_COOKIE, state, **cookie_options)
     response.set_cookie(VERIFIER_COOKIE, verifier, **cookie_options)
@@ -59,8 +60,8 @@ async def etsy_callback(
     frontend_url = str(settings.frontend_url).rstrip("/")
     redirect_url = f"{frontend_url}/onboarding"
     response = RedirectResponse(url=redirect_url, status_code=status.HTTP_303_SEE_OTHER)
-    response.delete_cookie(STATE_COOKIE)
-    response.delete_cookie(VERIFIER_COOKIE)
+    response.delete_cookie(STATE_COOKIE, domain=settings.cookie_domain)
+    response.delete_cookie(VERIFIER_COOKIE, domain=settings.cookie_domain)
 
     if error:
         response.headers["location"] = f"{redirect_url}?etsy=denied"
@@ -89,6 +90,8 @@ async def etsy_callback(
         seconds=int(token_data.get("expires_in", 3600))
     )
     if shop_data:
+        if shop_data.get("shop_id"):
+            shop.etsy_shop_id = str(shop_data.get("shop_id"))
         shop.shop_name = shop_data.get("shop_name") or shop.shop_name
         shop.shop_url = shop_data.get("url") or shop.shop_url
     db.add(shop)

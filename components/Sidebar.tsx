@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  BarChart3,
   CreditCard,
   Home,
   ListChecks,
@@ -21,8 +22,9 @@ import type { User } from "@/lib/types";
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: Home },
+  { href: "/shop-analysis", label: "Shop Analysis", icon: BarChart3 },
   { href: "/new-listing", label: "New Listing", icon: PlusCircle },
-  { href: "/listings", label: "My Listings", icon: ListChecks },
+  { href: "/my-listings", label: "My Listings", icon: ListChecks },
   { href: "/settings", label: "Settings", icon: Settings },
   { href: "/upgrade", label: "Upgrade", icon: CreditCard }
 ];
@@ -42,7 +44,7 @@ export function Sidebar({ user }: { user: User }) {
     }
   }
 
-  const navigation = (
+  const renderNavigation = () => (
     <nav className="flex gap-1 lg:flex-col">
       {navItems.map((item) => {
         const Icon = item.icon;
@@ -78,7 +80,7 @@ export function Sidebar({ user }: { user: User }) {
             <div className="text-xs text-gray-400">Etsy growth studio</div>
           </div>
         </div>
-        {navigation}
+        {renderNavigation()}
         <div className="mt-auto rounded-lg border border-white/10 bg-white/5 p-4">
           <div className="mb-3 flex items-center justify-between gap-3">
             <div className="min-w-0">
@@ -104,7 +106,7 @@ export function Sidebar({ user }: { user: User }) {
           <Link href="/dashboard" className="text-base font-bold">ListifyAI</Link>
           <Badge tone="indigo">{user.plan}</Badge>
         </div>
-        <div className="overflow-x-auto">{navigation}</div>
+        <div className="overflow-x-auto">{renderNavigation()}</div>
       </div>
     </>
   );

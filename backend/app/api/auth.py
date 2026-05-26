@@ -27,7 +27,8 @@ def _set_auth_cookie(response: Response, user: User) -> None:
         max_age=max_age,
         httponly=True,
         secure=settings.cookie_secure,
-        samesite="lax"
+        samesite="lax",
+        domain=settings.cookie_domain
     )
 
 
@@ -63,7 +64,13 @@ def login(payload: LoginRequest, response: Response, db: Session = Depends(get_d
 @router.post("/logout")
 def logout(response: Response) -> dict[str, bool]:
     settings = get_settings()
-    response.delete_cookie(key=settings.cookie_name, httponly=True, secure=settings.cookie_secure, samesite="lax")
+    response.delete_cookie(
+        key=settings.cookie_name,
+        httponly=True,
+        secure=settings.cookie_secure,
+        samesite="lax",
+        domain=settings.cookie_domain
+    )
     return {"ok": True}
 
 

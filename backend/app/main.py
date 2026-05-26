@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from backend.app.api import auth, billing, dashboard, etsy, jobs, listings, onboarding, settings
+from backend.app.api import auth, billing, dashboard, etsy, jobs, listings, onboarding, settings, shop
 from backend.app.core.config import get_settings
 
 settings_obj = get_settings()
@@ -29,6 +29,7 @@ app.include_router(settings.router)
 app.include_router(billing.router)
 app.include_router(jobs.router)
 app.include_router(listings.router)
+app.include_router(shop.router)
 
 
 @app.get("/health")

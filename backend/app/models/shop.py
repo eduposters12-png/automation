@@ -20,6 +20,7 @@ class Shop(Base):
     )
     shop_url: Mapped[str | None] = mapped_column(String(500))
     shop_name: Mapped[str | None] = mapped_column(String(255))
+    etsy_shop_id: Mapped[str | None] = mapped_column(String(255), index=True)
     niche: Mapped[str | None] = mapped_column(String(255))
     etsy_access_token_encrypted: Mapped[str | None] = mapped_column(Text)
     etsy_refresh_token_encrypted: Mapped[str | None] = mapped_column(Text)

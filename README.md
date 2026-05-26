@@ -39,6 +39,8 @@ Generate `ENCRYPTION_KEY` with:
 openssl rand -hex 32
 ```
 
+For split production domains such as `app.example.com` and `api.example.com`, set `COOKIE_DOMAIN=.example.com` and `COOKIE_SECURE=true`.
+
 4. Create a PostgreSQL database and set `DATABASE_URL`.
 
 5. Run migrations:
@@ -60,6 +62,22 @@ npm run dev
 ```
 
 Frontend runs at `http://localhost:3000`; backend runs at `http://localhost:8000`.
+
+## Server Requirements
+
+ffmpeg must be installed on the server for video generation:
+
+Ubuntu/Debian:
+
+```bash
+apt-get install ffmpeg
+```
+
+macOS:
+
+```bash
+brew install ffmpeg
+```
 
 ## Etsy OAuth
 
@@ -87,6 +105,14 @@ For local webhooks:
 stripe listen --forward-to localhost:8000/stripe/webhook
 ```
 
+## Shop Intelligence
+
+Set `SERPER_API_KEY` for market trend search. The Etsy OAuth scope list must include `transactions_r` so the backend can read recent sales data for top-seller analysis. Shops connected before this scope was added need to reconnect Etsy.
+
+## Image Generation
+
+Set `OPENAI_API_KEY` for platform-owned GPT Image generation and `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, and `CLOUDINARY_API_SECRET` for signed image uploads. These keys stay in the FastAPI environment and are never exposed to Next.js.
+
 ## Backend Endpoints
 
 - `POST /auth/register`
@@ -100,9 +126,26 @@ stripe listen --forward-to localhost:8000/stripe/webhook
 - `GET /dashboard/stats`
 - `GET /settings`
 - `PATCH /settings`
+- `GET /shop/analysis`
+- `POST /shop/analyze`
 - `POST /stripe/checkout`
 - `POST /stripe/webhook`
 - `GET /listings`
+- `POST /listings/bulk-queue`
+- `POST /listings/generate-image`
+- `POST /listings/{listing_id}/regenerate-image`
+- `POST /listings/{listing_id}/set-high-res`
+- `GET /listings/{listing_id}/images`
+- `PATCH /listings/{listing_id}/approve-image`
+- `POST /listings/{listing_id}/generate-video`
+- `POST /listings/{listing_id}/generate-copy`
+- `PATCH /listings/{listing_id}/copy`
+- `GET /listings/{listing_id}/package`
+- `PATCH /listings/{listing_id}/bundle`
+- `POST /listings/{listing_id}/upload`
+- `GET /listings/{listing_id}/status`
+- `GET /listings/{listing_id}/download`
+- `DELETE /listings/{listing_id}`
 - `GET /jobs`
 - `POST /jobs/analyze-shop`
 - `POST /jobs/generate-listing`

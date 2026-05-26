@@ -20,6 +20,7 @@ export function OnboardingSteps({
 }) {
   const router = useRouter();
   const [status, setStatus] = useState(initialStatus);
+  const [claudeKey, setClaudeKey] = useState("");
   const [connecting, setConnecting] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -54,6 +55,7 @@ export function OnboardingSteps({
         json: { claude_api_key: claudeKey }
       });
       setStatus(nextStatus);
+      setClaudeKey("");
       toast.success("Claude key saved");
       if (nextStatus.complete) {
         router.push("/dashboard");
@@ -120,6 +122,8 @@ export function OnboardingSteps({
                 name="claude_api_key"
                 type="password"
                 autoComplete="off"
+                value={claudeKey}
+                onChange={(event) => setClaudeKey(event.target.value)}
                 placeholder={status.claude_key_added ? "Saved key is hidden" : "sk-ant-..."}
                 required={!status.claude_key_added}
               />
