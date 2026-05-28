@@ -269,3 +269,67 @@ export interface EtsyConnectionStatus {
   etsy_shop_id: string | null;
   connected_at: string | null;
 }
+
+export type AutoMode = "MANUAL" | "AUTO" | "HYBRID";
+export type QualityMode = "FULL" | "BALANCED" | "FAST";
+
+export type AutomationTopic = {
+  id: string;
+  topic: string;
+  description: string;
+  status: "pending" | "in_progress" | "done";
+  listing_id?: string;
+};
+
+export type AutomationConfig = {
+  mode: AutoMode;
+  topics_json: AutomationTopic[];
+  daily_limit: number;
+  target_min_listings: number | null;
+  target_max_listings: number | null;
+  quality_mode: QualityMode;
+  auto_quality_adjust: boolean;
+  is_running: boolean;
+  listings_created_today: number;
+  listings_created_total: number;
+  last_run_at: string | null;
+};
+
+export type AutomationPreview = {
+  credit_balance: number;
+  preview: Record<QualityMode, {
+    quality_mode: QualityMode;
+    cost_per_listing: number;
+    listings_possible: number;
+    credit_balance: number;
+    credits_needed_for_one: number;
+  }>;
+  recommendation: {
+    recommended_quality: QualityMode;
+    listings_with_recommended: number;
+    can_hit_target: boolean;
+    warning: string | null;
+  } | null;
+  current_quality: QualityMode;
+  target_min: number | null;
+  target_max: number | null;
+};
+
+export type AutomationLog = {
+  id: string;
+  event_type: string;
+  message: string;
+  metadata_json: Record<string, unknown>;
+  created_at: string;
+};
+
+export type NotificationItem = {
+  id: string;
+  type: string;
+  title: string;
+  message: string;
+  is_read: boolean;
+  action_url: string | null;
+  metadata_json: Record<string, any>;
+  created_at: string;
+};

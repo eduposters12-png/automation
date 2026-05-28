@@ -9,6 +9,7 @@ import {
   LogOut,
   PlusCircle,
   Settings,
+  Zap,
   Sparkles
 } from "lucide-react";
 import Link from "next/link";
@@ -29,6 +30,7 @@ const navItems = [
   { href: "/shop-analysis", label: "Shop Analysis", icon: BarChart3 },
   { href: "/new-listing", label: "New Listing", icon: PlusCircle },
   { href: "/new-listing/multi-page", label: "Multi-Page Product", icon: FileText },
+  { href: "/automation", label: "Automation", icon: Zap },
   { href: "/my-listings", label: "My Listings", icon: ListChecks },
   { href: "/settings", label: "Settings", icon: Settings },
   { href: "/upgrade", label: "Upgrade", icon: CreditCard }

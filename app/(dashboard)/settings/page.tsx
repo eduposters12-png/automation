@@ -1,7 +1,8 @@
 "use client";
 
 import * as Sentry from "@sentry/nextjs";
-import { CheckCircle2, Coins, ExternalLink, KeyRound, Loader2, Store, Trash2, XCircle } from "lucide-react";
+import { CheckCircle2, Coins, ExternalLink, KeyRound, Loader2, Settings2, Store, Trash2, XCircle } from "lucide-react";
+import Link from "next/link";
 import { FormEvent, useEffect, useState } from "react";
 import toast from "react-hot-toast";
 
@@ -20,6 +21,7 @@ import type {
   SettingsResponse,
   TestConnectionResponse
 } from "@/lib/types";
+import type { AutomationConfig } from "@/lib/types";
 
 const featureText = {
   FREE: ["20 signup credits", "Explore onboarding"],
@@ -58,6 +60,7 @@ export default function SettingsPage() {
   const [credits, setCredits] = useState<CreditBalance | null>(null);
   const [creditHistory, setCreditHistory] = useState<CreditHistoryEntry[]>([]);
   const [etsyStatus, setEtsyStatus] = useState<EtsyConnectionStatus | null>(null);
+  const [automationConfig, setAutomationConfig] = useState<AutomationConfig | null>(null);
   const [claudeKey, setClaudeKey] = useState("");
   const [name, setName] = useState("");
   const [oldPassword, setOldPassword] = useState("");
@@ -87,6 +90,7 @@ export default function SettingsPage() {
       ]);
       setCredits(creditResponse);
       setCreditHistory(historyResponse);
+      apiFetch<AutomationConfig>("/automation/config").then(setAutomationConfig).catch(() => undefined);
     } catch (error) {
       captureUiError(error);
       toast.error("Could not load settings");
@@ -338,6 +342,34 @@ export default function SettingsPage() {
             </Button>
           </div>
         )}
+      </Card>
+
+      <Card className="space-y-5">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div className="flex items-start gap-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-indigo-50 text-primary">
+              <Settings2 className="h-5 w-5" aria-hidden="true" />
+            </div>
+            <div>
+              <h2 className="text-base font-semibold text-gray-950">Automation Mode</h2>
+              <p className="mt-1 text-sm text-gray-600">Current automation status for this shop.</p>
+            </div>
+          </div>
+          <Link href="/automation" className="text-sm font-semibold text-primary hover:text-indigo-500">
+            Change Mode
+          </Link>
+        </div>
+        <div className="flex flex-wrap items-center gap-3">
+          <span className="rounded-full bg-indigo-50 px-3 py-1 text-sm font-bold text-indigo-700">
+            {automationConfig?.mode || "MANUAL"}
+          </span>
+          {automationConfig && automationConfig.mode !== "MANUAL" ? (
+            <span className={automationConfig.is_running ? "inline-flex items-center gap-2 text-sm font-semibold text-emerald-700" : "inline-flex items-center gap-2 text-sm font-semibold text-gray-500"}>
+              <span className={automationConfig.is_running ? "h-2 w-2 animate-pulse rounded-full bg-emerald-500" : "h-2 w-2 rounded-full bg-gray-400"} />
+              {automationConfig.is_running ? "Running" : "Paused"}
+            </span>
+          ) : null}
+        </div>
       </Card>
 
       <Card className="space-y-5">

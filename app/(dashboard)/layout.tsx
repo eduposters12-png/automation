@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 
 import { CreditAlertWrapper } from "@/components/CreditAlertWrapper";
+import { NotificationBell } from "@/components/NotificationBell";
 import { Sidebar } from "@/components/Sidebar";
 import { getCurrentUser } from "@/lib/server-api";
 
@@ -15,6 +16,9 @@ export default async function DashboardLayout({ children }: { children: React.Re
     <div className="min-h-screen bg-gray-50 lg:flex">
       <Sidebar user={auth.user} />
       <main className="min-w-0 flex-1 px-4 py-6 sm:px-6 lg:px-8">
+        <div className="mb-4 flex justify-end">
+          <NotificationBell />
+        </div>
         {children}
         <CreditAlertWrapper />
       </main>

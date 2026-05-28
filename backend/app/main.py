@@ -11,7 +11,7 @@ project_root_string = str(project_root)
 if project_root_string not in sys.path:
     sys.path.insert(0, project_root_string)
 
-from backend.app.api import analytics, auth, billing, credits, dashboard, etsy, jobs, listings, onboarding, settings, shop
+from backend.app.api import analytics, auth, automation, billing, credits, dashboard, etsy, jobs, listings, onboarding, settings, shop
 from backend.app.core.config import get_settings
 from backend.app.middleware.rate_limit import configure_rate_limit
 from backend.app.middleware.request_logging import configure_request_logging
@@ -61,6 +61,8 @@ app.include_router(shop.router)
 app.include_router(analytics.router)
 app.include_router(analytics.shop_router)
 app.include_router(credits.router)
+app.include_router(automation.router)
+app.include_router(automation.notifications_router)
 
 
 @app.get("/health")

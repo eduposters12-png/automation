@@ -24,6 +24,7 @@ CLAUDE_PAGE_PLAN_PROMPT = """You are an expert Etsy digital product designer. Yo
 
 Product Idea: {product_idea_json}
 Shop Niche and Style: {shop_niche}, {shop_style}
+{max_pages_hint}
 
 Decide the OPTIMAL number of pages for this product. Consider:
 - More pages = more value for buyer, but more AI generation cost
@@ -120,19 +121,32 @@ def _parse_page_plan(text: str) -> dict[str, Any]:
     return plan
 
 
-async def plan_product_pages(product_idea: dict, shop_analysis: dict, claude_api_key: str) -> dict:
+def _cap_page_plan(plan: dict[str, Any], max_pages: int | None) -> dict[str, Any]:
+    if max_pages is None:
+        return plan
+    pages = plan.get("pages")
+    if isinstance(pages, list) and len(pages) > max_pages:
+        plan["pages"] = pages[:max_pages]
+    if int(plan.get("total_pages") or 0) > max_pages:
+        plan["total_pages"] = max_pages
+    return plan
+
+
+async def plan_product_pages(product_idea: dict, shop_analysis: dict, claude_api_key: str, max_pages: int | None = None) -> dict:
     shop_niche = str(shop_analysis.get("niche") or "Etsy digital products")
     shop_style = str(shop_analysis.get("style") or "clean printable design")
+    max_pages_hint = f"Maximum pages allowed: {max_pages}. Do not exceed this." if max_pages is not None else ""
     prompt = (
         CLAUDE_PAGE_PLAN_PROMPT
         .replace("{product_idea_json}", json.dumps(product_idea, ensure_ascii=False, default=str))
         .replace("{shop_niche}", shop_niche)
         .replace("{shop_style}", shop_style)
+        .replace("{max_pages_hint}", max_pages_hint)
     )
 
     first_response = await _call_claude(prompt, claude_api_key)
     try:
-        return _parse_page_plan(first_response)
+        return _cap_page_plan(_parse_page_plan(first_response), max_pages)
     except MultiPageGenerationError:
         retry_prompt = (
             f"{prompt}\n\n"
@@ -140,7 +154,7 @@ async def plan_product_pages(product_idea: dict, shop_analysis: dict, claude_api
             "with double-quoted keys and strings, no markdown fences, no comments, and no prose."
         )
         retry_response = await _call_claude(retry_prompt, claude_api_key)
-        return _parse_page_plan(retry_response)
+        return _cap_page_plan(_parse_page_plan(retry_response), max_pages)
 
 
 async def _upload_image_to_cloudinary(image_data: str, public_id: str) -> str:
@@ -257,7 +271,7 @@ async def upload_pdf_to_cloudinary(pdf_bytes: bytes, listing_id: str) -> str:
     return str(secure_url)
 
 
-async def run_multi_page_generation(listing_id: str, db: Session) -> dict:
+async def run_multi_page_generation(listing_id: str, db: Session, max_pages: int | None = None) -> dict:
     listing_uuid = UUID(listing_id)
     listing = db.get(Listing, listing_uuid)
     if not listing or not listing.is_multi_page:
@@ -275,7 +289,7 @@ async def run_multi_page_generation(listing_id: str, db: Session) -> dict:
     claude_api_key = decrypt_secret(shop.claude_api_key_encrypted or "")
 
     try:
-        plan = await plan_product_pages(product_idea, shop_analysis, claude_api_key)
+        plan = await plan_product_pages(product_idea, shop_analysis, claude_api_key, max_pages=max_pages)
     except Exception as exc:
         listing.status = ListingStatus.FAILED
         listing.error_message = str(exc)

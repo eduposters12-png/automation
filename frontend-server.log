@@ -35,3 +35,10 @@
  ✓ Compiled /onboarding in 3.2s (2615 modules)
  GET /onboarding?_rsc=wwkn8 200 in 674ms
  GET /onboarding 200 in 536ms
+ GET /onboarding?etsy=invalid 200 in 405ms
+ GET /onboarding?etsy=invalid 200 in 79ms
+ GET /onboarding?etsy=invalid 200 in 378ms
+ GET /onboarding?etsy=invalid 200 in 67ms
+ GET /onboarding?etsy=invalid 200 in 93ms
+ GET /onboarding?etsy=invalid 200 in 66ms
+ GET /onboarding?etsy=invalid 200 in 60ms
